@@ -1,0 +1,4747 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#202725">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
+    <link rel="icon" type="image/png" href="/logo.png?v={{ asset_version }}">
+    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ asset_version }}">
+    <meta name="apple-mobile-web-app-title" content="NathGPT">
+    <title>NathGPT</title>
+
+    <link
+        rel="stylesheet"
+        href="{{ url_for('static', filename='style.css', v=asset_version) }}"
+    >
+</head>
+
+<body class="chat-page" data-account-key="{{ username }}">
+
+<div class="launch-screen" id="launchScreen" role="status" aria-label="Ouverture de NathGPT">
+    <div class="launch-glow"></div>
+    <span class="launch-star launch-star-one">✦</span>
+    <span class="launch-star launch-star-two">✧</span>
+    <span class="launch-star launch-star-three">·</span>
+    <div class="launch-logo-shell"><img src="/logo.png" alt=""></div>
+    <div class="launch-copy">
+        <strong>NathGPT</strong>
+        <span>Préparation de ton espace créatif</span>
+    </div>
+    <div class="launch-progress"><i></i></div>
+</div>
+
+<div class="app">
+
+    <!-- ===================================================== -->
+    <!-- SIDEBAR -->
+    <!-- ===================================================== -->
+
+    <aside class="sidebar">
+
+        <div class="brand">
+            <img src="/logo.png" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
+            <span>NathGPT</span>
+        </div>
+
+        <button
+            class="new-chat"
+            onclick="newChat()"
+        >
+            ＋ Nouvelle discussion
+        </button>
+
+        {% if cricut_enabled %}
+        <button
+            class="cricut-entry"
+            type="button"
+            onclick="openCricutUploader()"
+        >
+            ✦ Adapter des stickers
+        </button>
+        {% endif %}
+
+        <div class="history">
+
+            <div class="history-title">
+                Discussions
+            </div>
+
+            <div id="historyList"></div>
+
+        </div>
+
+        <div class="account-box">
+
+            <div class="account-avatar">
+                {{ username[0]|upper }}
+            </div>
+
+            <div class="account-details">
+                <strong>{{ username }}</strong>
+                <span>Connecté</span>
+            </div>
+
+            <a
+                href="{{ url_for('settings') }}"
+                class="settings-button"
+                title="Paramètres"
+            >
+                ⚙
+            </a>
+
+            <a
+                href="{{ url_for('logout') }}"
+                class="logout-button"
+                title="Se déconnecter"
+            >
+                ↪
+            </a>
+
+        </div>
+
+    </aside>
+
+
+    <!-- ===================================================== -->
+    <!-- MAIN -->
+    <!-- ===================================================== -->
+
+    <main class="main">
+
+        <div class="topbar">
+
+            <div class="mobile-brand">
+                <img src="/logo.png" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
+                <span>NathGPT</span>
+            </div>
+
+            <div class="mobile-actions">
+                <button
+                    class="mobile-history-toggle"
+                    type="button"
+                    onclick="toggleMobileHistory()"
+                    aria-label="Ouvrir les discussions"
+                    aria-controls="mobileHistoryOverlay"
+                >
+                    ☰
+                </button>
+
+                <button
+                    class="mobile-new-chat"
+                    type="button"
+                    onclick="newChat()"
+                    aria-label="Nouvelle discussion"
+                >
+                    +
+                </button>
+            </div>
+
+        </div>
+
+
+        <!-- ================================================= -->
+        <!-- CONVERSATION -->
+        <!-- ================================================= -->
+
+        <div
+            class="conversation"
+            id="conversation"
+        >
+
+            <div
+                class="welcome"
+                id="welcome"
+            >
+
+                <img
+                    src="/logo.png"
+                    class="welcome-logo"
+                    alt="NathGPT"
+                >
+
+                <h1>
+                    Comment puis-je vous aider ?
+                </h1>
+
+                <p>
+                    Posez une question à NathGPT
+                </p>
+
+            </div>
+
+            <div
+                class="message-container"
+                id="messages"
+            ></div>
+
+        </div>
+
+
+        <!-- ================================================= -->
+        <!-- INPUT -->
+        <!-- ================================================= -->
+
+        <div class="input-area">
+
+            <div class="input-wrapper">
+
+                <div class="input-box">
+
+                    <button
+                        class="plus-button"
+                        type="button"
+                        onclick="document.getElementById('referenceImages').click()"
+                        aria-label="Ajouter des images de référence"
+                    >
+                        ＋
+                    </button>
+
+                    <input
+                        id="referenceImages"
+                        class="reference-images-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        multiple
+                    >
+
+                    <input
+                        id="cricutImageInput"
+                        class="reference-images-input"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                    >
+
+                    <textarea
+                        id="messageInput"
+                        rows="1"
+                        placeholder="Posez une question..."
+                    ></textarea>
+
+                    <button
+                        class="send-button"
+                        id="sendButton"
+                        onclick="sendMessage()"
+                        disabled
+                    >
+                        ↑
+                    </button>
+
+                </div>
+
+                <div
+                    class="reference-preview"
+                    id="referencePreview"
+                    aria-live="polite"
+                ></div>
+
+                <div class="footer-text">
+                    NathGPT peut faire des erreurs.
+                </div>
+
+            </div>
+
+        </div>
+
+    </main>
+
+    <div
+        class="mobile-history-overlay"
+        id="mobileHistoryOverlay"
+        aria-hidden="true"
+    >
+        <button
+            class="mobile-history-backdrop"
+            type="button"
+            onclick="closeMobileHistory()"
+            aria-label="Fermer les discussions"
+        ></button>
+
+        <aside class="mobile-history-sheet" aria-label="Historique des discussions">
+            <div class="mobile-history-header">
+                <strong>Discussions</strong>
+                <button type="button" onclick="closeMobileHistory()" aria-label="Fermer">×</button>
+            </div>
+            <button type="button" class="mobile-history-new" onclick="newChat()">＋ Nouvelle discussion</button>
+            {% if cricut_enabled %}
+            <button type="button" class="mobile-cricut-entry" onclick="openCricutUploader()">✦ Adapter des stickers</button>
+            {% endif %}
+            <div class="mobile-history-list" id="mobileHistoryList"></div>
+            <a class="mobile-history-settings" href="{{ url_for('settings') }}">⚙ Paramètres</a>
+        </aside>
+    </div>
+
+</div>
+
+
+<script>
+
+/* ========================================================= */
+/* ELEMENTS */
+/* ========================================================= */
+
+const input =
+    document.getElementById("messageInput");
+
+const sendButton =
+    document.getElementById("sendButton");
+
+const messages =
+    document.getElementById("messages");
+
+const welcome =
+    document.getElementById("welcome");
+
+const conversation =
+    document.getElementById("conversation");
+
+const historyList =
+    document.getElementById("historyList");
+
+const mobileHistoryList =
+    document.getElementById("mobileHistoryList");
+
+const referenceImagesInput =
+    document.getElementById("referenceImages");
+
+const cricutImageInput =
+    document.getElementById("cricutImageInput");
+
+const referencePreview =
+    document.getElementById("referencePreview");
+
+
+let constellationAnimationFrame = null;
+
+let imageRevealAnimationFrame = null;
+
+let constellationResizeHandler = null;
+
+let currentImagePrompt = "";
+
+let currentConversationId = createConversationId();
+
+let shouldRestoreLastConversation = true;
+
+let activeDiscordStream = null;
+
+let isDiscordTurnActive = false;
+
+let currentTurnIsImage = false;
+
+let remoteGenerationStatus = null;
+
+let remoteGenerationPercent = null;
+
+let selectedReferenceImages = [];
+
+let generationStartedAt = 0;
+
+let learnedGenerationDuration = getLearnedGenerationDuration();
+
+let thinkingPreviewTimer = null;
+
+let responseRevealTimer = null;
+
+let staffLogoClickCount = 0;
+let staffLogoClickTimer = null;
+
+
+function registerStaffLogoClick() {
+
+    staffLogoClickCount += 1;
+
+    if (staffLogoClickTimer) {
+        clearTimeout(staffLogoClickTimer);
+    }
+
+    if (staffLogoClickCount >= 10) {
+        window.location.href = "{{ url_for('staff_panel') }}";
+        return;
+    }
+
+    staffLogoClickTimer = setTimeout(() => {
+        staffLogoClickCount = 0;
+        staffLogoClickTimer = null;
+    }, 4000);
+}
+
+
+document.querySelectorAll("[data-staff-trigger]").forEach((logo) => {
+    logo.addEventListener("click", registerStaffLogoClick);
+    logo.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            registerStaffLogoClick();
+        }
+    });
+});
+
+
+/* ========================================================= */
+/* INPUT */
+/* ========================================================= */
+
+input.addEventListener(
+    "input",
+    function () {
+
+        this.style.height = "auto";
+
+        this.style.height =
+            Math.min(
+                this.scrollHeight,
+                180
+            ) + "px";
+
+        sendButton.disabled =
+            isDiscordTurnActive ||
+            this.value.trim() === "";
+
+    }
+);
+
+
+referenceImagesInput.addEventListener(
+    "change",
+    function () {
+
+        const files = Array.from(this.files || []);
+
+        if (files.length > 4) {
+            addAssistantMessage("Tu peux ajouter jusqu'à 4 images de référence.");
+            this.value = "";
+            return;
+        }
+
+
+        selectedReferenceImages = files;
+        renderReferencePreview();
+    }
+);
+
+
+input.addEventListener(
+    "keydown",
+    function (event) {
+
+        if (
+            event.key === "Enter" &&
+            !event.shiftKey
+        ) {
+
+            event.preventDefault();
+
+            sendMessage();
+
+        }
+
+    }
+);
+
+
+/* ========================================================= */
+/* SEND MESSAGE */
+/* ========================================================= */
+
+function sendMessage() {
+
+    const text =
+        input.value.trim();
+
+    if (!text) {
+        return;
+    }
+
+
+    const referenceImages = selectedReferenceImages;
+
+    rememberActiveConversation();
+
+
+    welcome.style.display =
+        "none";
+
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "user-message";
+
+
+    const bubble =
+        document.createElement("div");
+
+    bubble.className =
+        "user-bubble";
+
+    bubble.textContent =
+        text;
+
+
+    message.appendChild(
+        bubble
+    );
+
+    messages.appendChild(
+        message
+    );
+
+
+    if (
+        historyList.children.length === 0
+    ) {
+
+        const history =
+            document.createElement("div");
+
+        history.className =
+            "history-item";
+
+        history.textContent =
+            text;
+
+        historyList.appendChild(
+            history
+        );
+
+    }
+
+
+    input.value =
+        "";
+
+    input.style.height =
+        "auto";
+
+    sendButton.disabled =
+        true;
+
+
+    currentImagePrompt = text;
+
+    currentTurnIsImage =
+        isImageRequest(text) ||
+        referenceImages.length > 0;
+
+
+    clearReferenceImages();
+
+
+    if (
+        currentTurnIsImage
+    ) {
+
+        currentImagePrompt = text;
+
+        showImageGeneration();
+
+    }
+
+    else {
+
+        showThinking();
+
+        /*
+            TEMPORAIRE :
+            à supprimer lorsque l'IA texte
+            sera réellement connectée.
+        */
+
+        setTimeout(
+            () => {
+                if (!isDiscordTurnActive) {
+                    hideThinking();
+                }
+            },
+            5000
+        );
+
+    }
+
+
+    startDiscordTurn(text, referenceImages);
+
+
+    scrollToBottom();
+
+}
+
+
+/* ========================================================= */
+/* RELAIS DISCORD */
+/* ========================================================= */
+
+function createConversationId() {
+
+    if (window.crypto && crypto.randomUUID) {
+        return crypto.randomUUID().replace(/-/g, "");
+    }
+
+    return "conversation" + Date.now() + Math.random().toString(36).slice(2);
+}
+
+
+function rememberActiveConversation() {
+
+    localStorage.setItem(
+        "nathgpt-last-conversation",
+        currentConversationId
+    );
+}
+
+
+function getLearnedGenerationDuration() {
+
+    const saved = Number(localStorage.getItem("nathgpt-generation-duration"));
+
+    if (Number.isFinite(saved) && saved >= 8000 && saved <= 120000) {
+        return saved;
+    }
+
+    return 30000;
+}
+
+
+function recordGenerationDuration() {
+
+    if (!generationStartedAt) {
+        return;
+    }
+
+
+    const actualDuration = performance.now() - generationStartedAt;
+
+    if (actualDuration < 3000 || actualDuration > 180000) {
+        return;
+    }
+
+
+    learnedGenerationDuration = Math.round(
+        learnedGenerationDuration * .7 + actualDuration * .3
+    );
+
+    localStorage.setItem(
+        "nathgpt-generation-duration",
+        String(learnedGenerationDuration)
+    );
+}
+
+
+function estimatedGenerationProgress(elapsed, duration) {
+
+    if (elapsed <= duration) {
+        return Math.min(.92, (elapsed / duration) * .92);
+    }
+
+
+    const overrun = (elapsed - duration) / Math.max(duration, 1);
+
+    return Math.min(.99, .92 + .07 * (1 - Math.exp(-overrun * 1.8)));
+}
+
+
+async function startDiscordTurn(question, referenceImages = []) {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+
+    isDiscordTurnActive = true;
+
+    try {
+
+        const formData = new FormData();
+        formData.append("question", question);
+        formData.append("conversation_id", currentConversationId);
+
+        for (const image of referenceImages) {
+            formData.append("reference_images", image, image.name);
+        }
+
+
+        const response = await fetch("/api/discord/turn", {
+            method: "POST",
+            body: formData
+        });
+
+
+        const payload = await response.json();
+
+        if (!response.ok) {
+            throw new Error(payload.error || "Connexion Discord impossible.");
+        }
+
+        if (payload.cricut_activated) {
+            finishDiscordTurn();
+            hideThinking();
+            removeImageGeneration();
+            messages.innerHTML = "";
+            welcome.style.display = "none";
+            showCricutActivation(payload.message || "Compte Cricut activé.");
+            loadConversations();
+
+            // Recharge le modèle de page pour faire apparaître le bouton
+            // Cricut réservé au compte venant d'être activé.
+            setTimeout(() => window.location.reload(), 2200);
+            return;
+        }
+
+        if (payload.pro_activated) {
+            finishDiscordTurn();
+            hideThinking();
+            removeImageGeneration();
+            messages.innerHTML = "";
+            welcome.style.display = "none";
+            addAssistantMessage(payload.message || "Compte Pro activé.");
+            loadConversations();
+            return;
+        }
+
+
+        listenForDiscordEvents(payload.job_id);
+        loadConversations();
+
+    }
+
+    catch (error) {
+
+        const retryIsImage = currentTurnIsImage;
+        finishDiscordTurn();
+        hideThinking();
+        removeImageGeneration();
+        showErrorMessage(
+            error.message || "Connexion Discord impossible.",
+            () => {
+                currentTurnIsImage = retryIsImage;
+                if (retryIsImage) {
+                    showImageGeneration();
+                }
+                else {
+                    showThinking();
+                }
+                startDiscordTurn(question, referenceImages);
+            }
+        );
+        loadConversations();
+    }
+}
+
+
+function listenForDiscordEvents(jobId, retryAttempt = 0) {
+
+    if (activeDiscordStream) {
+        activeDiscordStream.close();
+    }
+
+
+    const stream = new EventSource(
+        "/api/discord/jobs/" + encodeURIComponent(jobId) + "/events"
+    );
+
+
+    activeDiscordStream = stream;
+    let lastEventAt = Date.now();
+    let closed = false;
+
+    const stopStream = () => {
+        if (closed) {
+            return;
+        }
+        closed = true;
+        window.clearInterval(watchdog);
+        stream.close();
+        if (activeDiscordStream === stream) {
+            activeDiscordStream = null;
+        }
+    };
+
+    const reconnectOrFail = () => {
+        if (closed || activeDiscordStream !== stream || !isDiscordTurnActive) {
+            return;
+        }
+
+        stopStream();
+        if (retryAttempt < 2) {
+            if (currentTurnIsImage) {
+                updateImageGenerationProgress("Reconnexion au bot Discord…");
+            }
+            else {
+                updateThinkingStatus();
+            }
+            window.setTimeout(() => {
+                if (isDiscordTurnActive && !activeDiscordStream) {
+                    listenForDiscordEvents(jobId, retryAttempt + 1);
+                }
+            }, 1400);
+            return;
+        }
+
+        finishDiscordTurn();
+        hideThinking();
+        removeImageGeneration();
+        showErrorMessage("Le bot Discord ne répond plus. Tu peux réessayer sans perdre ta discussion.");
+        loadConversations();
+    };
+
+    const watchdog = window.setInterval(() => {
+        if (activeDiscordStream !== stream || !isDiscordTurnActive) {
+            stopStream();
+            return;
+        }
+        if (Date.now() - lastEventAt > 38000) {
+            reconnectOrFail();
+        }
+    }, 5000);
+
+
+    stream.onmessage = function (event) {
+
+        const payload = JSON.parse(event.data);
+        lastEventAt = Date.now();
+
+        if (payload.type === "keep-alive") {
+            return;
+        }
+
+        if (payload.type === "status") {
+
+            if (currentTurnIsImage) {
+
+                if (!document.getElementById("imageGeneration")) {
+                    hideThinking();
+                    showImageGeneration();
+                }
+
+
+                updateImageGenerationProgress(payload.message);
+            }
+
+            else {
+
+                if (!document.getElementById("aiThinking")) {
+                    showThinking();
+                }
+
+                updateThinkingStatus();
+            }
+
+            return;
+
+        }
+
+
+        if (payload.type === "image") {
+
+            stopStream();
+            finishDiscordTurn();
+            loadConversations();
+            recordGenerationDuration();
+
+            if (!document.getElementById("imageGeneration")) {
+                hideThinking();
+                showImageGeneration();
+            }
+
+
+            receiveGeneratedImage(payload.url);
+            notifyGenerationReady(
+                "Ton image est prête",
+                "NathGPT a terminé ta génération."
+            );
+            return;
+        }
+
+
+        stopStream();
+        finishDiscordTurn();
+        revealThinkingResponse(payload.message || "Réponse Discord vide.");
+        removeImageGeneration();
+        loadConversations();
+    };
+
+
+    stream.onerror = function () {
+        reconnectOrFail();
+    };
+}
+
+
+function finishDiscordTurn() {
+
+    isDiscordTurnActive = false;
+
+    currentTurnIsImage = false;
+
+    sendButton.disabled = input.value.trim() === "";
+}
+
+
+function updateThinkingStatus() {
+
+    const label = document.querySelector("#aiThinking .thinking-text");
+
+    if (label) {
+        label.textContent = "NathGPT réfléchit...";
+    }
+}
+
+
+function updateImageGenerationProgress(message) {
+
+    remoteGenerationStatus = message;
+
+    const match = String(message).match(/\b(\d{1,3})\s*%/);
+
+    if (match) {
+        remoteGenerationPercent = Math.min(99, Math.max(0, Number(match[1])));
+    }
+}
+
+
+function addAssistantMessage(text) {
+
+    const message = document.createElement("div");
+    message.className = "assistant-message";
+
+    const bubble = document.createElement("div");
+    bubble.className = "assistant-bubble";
+    bubble.textContent = text;
+
+    message.appendChild(bubble);
+    messages.appendChild(message);
+    scrollToBottom();
+}
+
+
+function showErrorMessage(text, onRetry = null) {
+
+    const card = document.createElement("section");
+    card.className = "chat-error-card";
+    card.setAttribute("role", "alert");
+    card.innerHTML = `
+        <span class="chat-error-orbit orbit-one"></span>
+        <span class="chat-error-orbit orbit-two"></span>
+        <span class="chat-error-particle particle-one">✦</span>
+        <span class="chat-error-particle particle-two">·</span>
+        <div class="chat-error-icon">!</div>
+        <div class="chat-error-copy"><strong>Une connexion a besoin d’attention</strong><p></p></div>
+    `;
+    card.querySelector("p").textContent = text;
+
+    if (typeof onRetry === "function") {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "chat-error-retry";
+        retry.textContent = "↻ Réessayer";
+        retry.addEventListener("click", () => {
+            retry.disabled = true;
+            retry.textContent = "Reconnexion…";
+            card.classList.add("is-retrying");
+            window.setTimeout(() => {
+                card.remove();
+                onRetry();
+            }, 420);
+        });
+        card.appendChild(retry);
+    }
+
+    messages.appendChild(card);
+    scrollToBottom();
+}
+
+
+async function notifyGenerationReady(title, body) {
+
+    if (!("Notification" in window) || Notification.permission !== "granted") {
+        return;
+    }
+
+    // Une notification est utile quand la personne consulte une autre app,
+    // pas lorsqu'elle regarde déjà le résultat apparaître à l'écran.
+    if (!document.hidden) {
+        return;
+    }
+
+    try {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, {
+            body,
+            icon: "/logo.png",
+            badge: "/logo.png",
+            tag: "nathgpt-generation-ready",
+            renotify: true,
+            data: { url: window.location.pathname }
+        });
+    }
+    catch (_) {
+        // Le résultat reste affiché dans l'historique même si le navigateur
+        // ne permet pas d'afficher la notification.
+    }
+}
+
+
+function showCricutActivation(text) {
+
+    const activation = document.createElement("section");
+    activation.className = "cricut-activation";
+    activation.setAttribute("role", "status");
+    activation.innerHTML = `
+        <span class="cricut-activation-spark spark-a">✦</span>
+        <span class="cricut-activation-spark spark-b">✧</span>
+        <span class="cricut-activation-spark spark-c">✦</span>
+        <span class="cricut-activation-spark spark-d">✧</span>
+        <div class="cricut-activation-seal"><span>✓</span></div>
+        <div class="cricut-activation-copy">
+            <p>MODE CRICUT</p>
+            <strong>Compte activé</strong>
+            <small></small>
+        </div>
+    `;
+
+    activation.querySelector("small").textContent = text;
+    messages.appendChild(activation);
+    scrollToBottom();
+}
+
+
+function revealThinkingResponse(text) {
+
+    const thinking = document.getElementById("aiThinking");
+
+    if (thinkingPreviewTimer) {
+        clearTimeout(thinkingPreviewTimer);
+        thinkingPreviewTimer = null;
+    }
+
+    if (responseRevealTimer) {
+        clearTimeout(responseRevealTimer);
+        responseRevealTimer = null;
+    }
+
+    const message = document.createElement("div");
+    message.className = "assistant-message assistant-reveal";
+
+    const bubble = document.createElement("div");
+    bubble.className = "assistant-bubble";
+    bubble.setAttribute("aria-live", "polite");
+    bubble.classList.add("is-typing");
+
+    const answerCopy = document.createElement("span");
+    answerCopy.className = "answer-reveal-copy";
+
+    const answerCaret = document.createElement("span");
+    answerCaret.className = "answer-reveal-caret";
+    answerCaret.setAttribute("aria-hidden", "true");
+
+    bubble.append(answerCopy, answerCaret);
+    message.appendChild(bubble);
+
+    if (thinking) {
+        thinking.replaceWith(message);
+    }
+    else {
+        messages.appendChild(message);
+    }
+
+    // Keeps one blurred frame before typing the real final answer.
+    void bubble.offsetWidth;
+    requestAnimationFrame(() => {
+        message.classList.add("is-revealed");
+        typeFinalResponse(bubble, answerCopy, text);
+    });
+    scrollToBottom();
+}
+
+
+function typeFinalResponse(bubble, answerCopy, text) {
+
+    const finalText = String(text || "Réponse Discord vide.");
+    const maximumDuration = 11000;
+    const minimumDuration = 1600;
+    const duration = Math.max(
+        minimumDuration,
+        Math.min(maximumDuration, finalText.length * 20)
+    );
+    const interval = 30;
+    const charactersPerTick = Math.max(
+        1,
+        Math.ceil(finalText.length / Math.max(1, duration / interval))
+    );
+    let characterIndex = 0;
+
+    const writeNextPart = () => {
+        characterIndex = Math.min(
+            finalText.length,
+            characterIndex + charactersPerTick
+        );
+        answerCopy.textContent = finalText.slice(0, characterIndex);
+        scrollToBottom();
+
+        if (characterIndex < finalText.length) {
+            responseRevealTimer = setTimeout(writeNextPart, interval);
+        }
+        else {
+            responseRevealTimer = null;
+            bubble.classList.remove("is-typing");
+        }
+    };
+
+    writeNextPart();
+}
+
+
+function renderReferencePreview() {
+
+    referencePreview.innerHTML = "";
+
+    for (const image of selectedReferenceImages) {
+
+        const item = document.createElement("div");
+        item.className = "reference-preview-item";
+
+        const thumbnail = new Image();
+        thumbnail.src = URL.createObjectURL(image);
+        thumbnail.alt = "Image de référence";
+        thumbnail.onload = () => URL.revokeObjectURL(thumbnail.src);
+
+        const name = document.createElement("span");
+        name.textContent = image.name;
+
+        item.append(thumbnail, name);
+        referencePreview.appendChild(item);
+    }
+}
+
+
+function clearReferenceImages() {
+
+    selectedReferenceImages = [];
+    referenceImagesInput.value = "";
+    referencePreview.innerHTML = "";
+}
+
+
+/* ========================================================= */
+/* HISTORIQUE ENREGISTRE */
+/* ========================================================= */
+
+function toggleMobileHistory() {
+
+    const overlay = document.getElementById("mobileHistoryOverlay");
+    const isOpen = overlay.classList.contains("is-open");
+
+    if (isOpen) {
+        closeMobileHistory();
+        return;
+    }
+
+    overlay.classList.add("is-open");
+    overlay.setAttribute("aria-hidden", "false");
+    document.body.classList.add("mobile-history-open");
+    loadConversations();
+}
+
+
+function closeMobileHistory() {
+
+    const overlay = document.getElementById("mobileHistoryOverlay");
+    overlay.classList.remove("is-open");
+    overlay.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("mobile-history-open");
+}
+
+
+function renderConversationHistory(items) {
+
+    historyList.innerHTML = "";
+    mobileHistoryList.innerHTML = "";
+
+    for (const item of items) {
+        const createItem = () => {
+            const history = document.createElement("button");
+            history.type = "button";
+            history.className = "history-item";
+            history.textContent = item.title || "Nouvelle discussion";
+            history.title = history.textContent;
+            history.onclick = () => openConversation(item.id);
+            return history;
+        };
+
+        historyList.appendChild(createItem());
+        mobileHistoryList.appendChild(createItem());
+    }
+}
+
+async function loadConversations() {
+
+    try {
+
+        const response = await fetch("/api/conversations");
+
+        if (!response.ok) {
+            return;
+        }
+
+
+        const payload = await response.json();
+        const savedItems = payload.conversations || [];
+        renderConversationHistory(savedItems);
+
+
+        if (shouldRestoreLastConversation) {
+
+            shouldRestoreLastConversation = false;
+
+            // Pendant une décomposition Cricut, la carte de suivi doit être
+            // restaurée à la place du simple message « Adaptation Cricut ».
+            // Sans cela, les deux restaurations asynchrones se remplaçaient.
+            if (readCricutRecovery()?.jobId) {
+                return;
+            }
+
+            const lastConversation = localStorage.getItem(
+                "nathgpt-last-conversation"
+            );
+
+            if (
+                lastConversation &&
+                savedItems.some(
+                    item => item.id === lastConversation
+                )
+            ) {
+                openConversation(lastConversation);
+            }
+        }
+
+    }
+
+    catch (error) {
+        // L'historique est secondaire : le chat reste utilisable hors ligne.
+    }
+}
+
+
+async function openConversation(conversationId) {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+    closeMobileHistory();
+
+    try {
+
+        const response = await fetch(
+            "/api/conversations/" + encodeURIComponent(conversationId)
+        );
+
+        if (!response.ok) {
+            return;
+        }
+
+
+        const payload = await response.json();
+        const savedConversation = payload.conversation;
+
+        currentConversationId = savedConversation.id;
+        rememberActiveConversation();
+        messages.innerHTML = "";
+        welcome.style.display = "none";
+
+        for (const item of savedConversation.messages || []) {
+
+            if (item.role === "user") {
+                addSavedUserMessage(item.content);
+            }
+
+            else if (Array.isArray(item.cricut_images)) {
+                addAssistantMessage(item.content || "Stickers Cricut terminés.");
+                addSavedCricutResult(item.cricut_images);
+            }
+
+            else if (item.image_url) {
+                addSavedImage(item.image_url);
+            }
+
+            else {
+                addAssistantMessage(item.content);
+            }
+        }
+
+
+        scrollToBottom();
+
+    }
+
+    catch (error) {
+        addAssistantMessage("Impossible de charger cette discussion.");
+    }
+}
+
+
+function addSavedUserMessage(text) {
+
+    const message = document.createElement("div");
+    message.className = "user-message";
+
+    const bubble = document.createElement("div");
+    bubble.className = "user-bubble";
+    bubble.textContent = text;
+
+    message.appendChild(bubble);
+    messages.appendChild(message);
+}
+
+
+function addSavedImage(imageUrl) {
+
+    const message = document.createElement("div");
+    message.className = "assistant-message generated-image-history";
+
+    const image = new Image();
+    image.className = "saved-generated-image";
+    image.src = imageUrl;
+    image.alt = "Image générée";
+    image.loading = "lazy";
+
+    message.appendChild(image);
+    appendGeneratedImageActions(message, imageUrl);
+    messages.appendChild(message);
+}
+
+
+function addSavedCricutResult(images) {
+
+    const card = document.createElement("section");
+    card.className = "cricut-generation cricut-saved-generation is-complete";
+
+    const heading = document.createElement("div");
+    heading.className = "cricut-heading";
+    heading.innerHTML = "<span class=\"cricut-heading-orb\">✦</span><div><strong>Stickers Cricut</strong><small>Résultat enregistré</small></div>";
+    card.appendChild(heading);
+
+    const results = document.createElement("div");
+    results.className = "cricut-results";
+    appendCricutResultGallery(results, images);
+    card.appendChild(results);
+    messages.appendChild(card);
+}
+
+
+function createGeneratedImageCard(imageUrl) {
+
+    const card = document.createElement("div");
+    card.className = "generated-image-card";
+
+    const image = new Image();
+    image.className = "saved-generated-image";
+    image.src = imageUrl;
+    image.alt = "Image générée";
+    image.loading = "lazy";
+
+    card.appendChild(image);
+    appendGeneratedImageActions(card, imageUrl);
+
+    return card;
+}
+
+
+function archiveCompletedImage() {
+
+    const generation = document.getElementById("imageGeneration");
+
+    if (
+        !generation ||
+        !generation.classList.contains("is-complete") ||
+        !generation.dataset.imageUrl
+    ) {
+        return;
+    }
+
+
+    generation.replaceWith(
+        createGeneratedImageCard(generation.dataset.imageUrl)
+    );
+}
+
+
+function showGeneratedImageActions(container, imageUrl) {
+
+    if (!container.querySelector(".generated-image-actions")) {
+        appendGeneratedImageActions(container, imageUrl);
+    }
+}
+
+
+function appendGeneratedImageActions(container, imageUrl) {
+
+    const actions = document.createElement("div");
+    actions.className = "generated-image-actions";
+
+    const edit = document.createElement("button");
+    edit.type = "button";
+    edit.textContent = "✦ Modifier";
+    edit.onclick = () => showImageEditComposer(container);
+
+    const download = document.createElement("a");
+    download.href = imageUrl;
+    download.download = "nathgpt-image";
+    download.textContent = "⇩ Télécharger";
+    download.target = "_blank";
+    download.rel = "noopener";
+
+    const png = document.createElement("button");
+    png.type = "button";
+    png.textContent = "PNG";
+    png.title = "Rendre en PNG";
+    png.onclick = requestPngVersion;
+
+    actions.append(edit, download, png);
+    container.appendChild(actions);
+}
+
+
+function showImageEditComposer(container) {
+
+    const existing = container.querySelector(".image-edit-composer");
+
+    if (existing) {
+        existing.querySelector("textarea").focus();
+        return;
+    }
+
+
+    const composer = document.createElement("div");
+    composer.className = "image-edit-composer";
+
+    const editInput = document.createElement("textarea");
+    editInput.rows = 2;
+    editInput.placeholder = "Décris la modification à apporter...";
+
+    const submit = document.createElement("button");
+    submit.type = "button";
+    submit.textContent = "Envoyer la modification";
+    submit.onclick = () => {
+
+        const requestText = editInput.value.trim();
+
+        if (!requestText || isDiscordTurnActive) {
+            return;
+        }
+
+
+        composer.remove();
+        requestImageCommand(
+            'modify: "' + requestText.replace(/"/g, "'") + '"',
+            requestText
+        );
+    };
+
+    composer.append(editInput, submit);
+    container.appendChild(composer);
+    editInput.focus();
+}
+
+
+function requestPngVersion() {
+
+    requestImageCommand("png:", "Conversion PNG");
+}
+
+
+function requestImageCommand(command, promptText) {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+
+    currentTurnIsImage = true;
+    currentImagePrompt = promptText;
+    showImageGeneration();
+    startDiscordTurn(command);
+}
+
+
+/* ========================================================= */
+/* DETECTION IMAGE */
+/* ========================================================= */
+
+function isImageRequest(text) {
+
+    const message =
+        text
+            .toLowerCase()
+            .normalize("NFD")
+            .replace(
+                /[\u0300-\u036f]/g,
+                ""
+            );
+
+
+    const keywords = [
+
+        "genere une image",
+        "genere l'image",
+        "genere image",
+
+        "cree une image",
+        "creer une image",
+        "cree l'image",
+        "creer l'image",
+
+        "fais une image",
+        "fait une image",
+
+        "dessine",
+        "dessine moi",
+        "dessine-moi",
+
+        "genere une photo",
+        "cree une photo",
+        "creer une photo",
+
+        "genere une illustration",
+        "cree une illustration",
+        "creer une illustration",
+
+        "image de",
+        "photo de",
+        "illustration de",
+
+        "generate an image",
+        "create an image",
+        "generate a picture",
+        "create a picture",
+        "draw me"
+
+    ];
+
+
+    return keywords.some(
+        keyword =>
+            message.includes(keyword)
+    );
+
+}
+
+
+/* ========================================================= */
+/* THINKING NORMAL */
+/* ========================================================= */
+
+function showThinking() {
+
+    hideThinking();
+
+
+    const thinking =
+        document.createElement("div");
+
+    thinking.id =
+        "aiThinking";
+
+    thinking.className =
+        "ai-thinking";
+
+
+    thinking.innerHTML = `
+
+        <div class="thinking-content">
+
+            <div class="thinking-orb">
+                <div class="orb-inner"></div>
+            </div>
+
+            <div class="thinking-text">
+
+                NathGPT réfléchit
+
+                <span class="thinking-dots">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                </span>
+
+            </div>
+
+        </div>
+
+        <div class="thinking-preview" aria-live="polite">
+            <div class="thinking-preview-caption">Une réponse se construit</div>
+            <div class="thinking-preview-line">
+                <span class="thinking-preview-copy"></span><span class="thinking-preview-caret"></span>
+            </div>
+        </div>
+
+    `;
+
+
+    messages.appendChild(
+        thinking
+    );
+
+    scrollToBottom();
+
+    animateThinkingPreview();
+
+}
+
+
+function hideThinking() {
+
+    if (thinkingPreviewTimer) {
+        clearTimeout(thinkingPreviewTimer);
+        thinkingPreviewTimer = null;
+    }
+
+    if (responseRevealTimer) {
+        clearTimeout(responseRevealTimer);
+        responseRevealTimer = null;
+    }
+
+    const thinking =
+        document.getElementById(
+            "aiThinking"
+        );
+
+    if (thinking) {
+        thinking.remove();
+    }
+
+}
+
+
+function animateThinkingPreview() {
+
+    const preview = document.querySelector("#aiThinking .thinking-preview-copy");
+
+    if (!preview) {
+        return;
+    }
+
+    const draft = [
+        "J'analyse attentivement ta demande.",
+        "Je repère les éléments les plus importants.",
+        "Je mets les idées dans le bon ordre.",
+        "Je vérifie les détails utiles.",
+        "Je cherche une réponse claire et complète.",
+        "Je prépare les explications nécessaires.",
+        "Je simplifie les points plus techniques.",
+        "Je relis la réponse avant de l'envoyer.",
+        "Presque terminé, encore un instant.",
+        "La réponse finale arrive maintenant..."
+    ].join("\n");
+
+    let characterIndex = 0;
+
+    const writeNextCharacter = () => {
+        const currentPreview = document.querySelector("#aiThinking .thinking-preview-copy");
+
+        if (!currentPreview) {
+            thinkingPreviewTimer = null;
+            return;
+        }
+
+        currentPreview.textContent = draft.slice(0, characterIndex);
+
+        if (characterIndex < draft.length) {
+            characterIndex += 1;
+            thinkingPreviewTimer = setTimeout(writeNextCharacter, 38);
+            return;
+        }
+
+        thinkingPreviewTimer = null;
+    };
+
+    writeNextCharacter();
+}
+
+
+/* ========================================================= */
+/* IMAGE GENERATION */
+/* ========================================================= */
+
+function showImageGeneration() {
+
+    hideThinking();
+
+    archiveCompletedImage();
+
+    removeImageGeneration();
+
+
+    remoteGenerationStatus = null;
+
+    remoteGenerationPercent = null;
+
+    generationStartedAt = performance.now();
+
+
+    const generation =
+        document.createElement("div");
+
+    generation.id =
+        "imageGeneration";
+
+    generation.className =
+        "image-generation-container";
+
+
+    generation.innerHTML = `
+
+        <div class="image-generation-header">
+
+            <img
+                src="/logo.png"
+                class="image-generation-logo"
+                alt="NathGPT"
+            >
+
+            <div>
+
+                <div class="image-generation-title">
+                    Création de votre image
+                </div>
+
+                <div
+                    class="image-generation-status"
+                    id="imageGenerationStatus"
+                >
+                    Votre idée prend forme...
+                </div>
+
+            </div>
+
+        </div>
+
+
+        <div
+            class="image-generation-frame is-generating"
+            id="imageGenerationFrame"
+        >
+
+            <div class="generation-aurora" aria-hidden="true">
+                <span class="generation-aurora-one"></span>
+                <span class="generation-aurora-two"></span>
+                <span class="generation-aurora-three"></span>
+            </div>
+
+            <div class="generation-grid" aria-hidden="true"></div>
+            <div class="generation-sweep" aria-hidden="true"></div>
+
+            <div class="generation-hud generation-hud-top" aria-hidden="true">
+                <span class="generation-live-dot"></span>
+                NATHGPT IMAGE
+            </div>
+
+            <div class="generation-hud generation-hud-right" aria-hidden="true">
+                <span>CRÉATION</span>
+                <span>EN COURS</span>
+            </div>
+
+            <div class="generation-orbits" aria-hidden="true">
+                <span class="generation-orbit generation-orbit-one"></span>
+                <span class="generation-orbit generation-orbit-two"></span>
+                <span class="generation-orbit generation-orbit-three"></span>
+            </div>
+
+            <canvas
+                id="constellationCanvas"
+            ></canvas>
+
+            <canvas
+                id="imageRevealCanvas"
+            ></canvas>
+
+            <canvas
+                id="orbZoomCanvas"
+            ></canvas>
+
+
+            <div
+                class="generation-orb"
+                id="generationOrb"
+            >
+                <div class="generation-orb-core"></div>
+                <div class="generation-orb-shine"></div>
+            </div>
+
+
+            <div
+                class="generation-stage-text"
+                id="generationStageText"
+            >
+                Préparation
+            </div>
+
+
+            <div
+                class="image-generation-percent"
+                id="imageGenerationPercent"
+            >
+                0%
+            </div>
+
+        </div>
+
+
+        <div
+            class="generation-progress"
+            id="generationProgress"
+        >
+            <div
+                class="generation-progress-bar"
+                id="generationProgressBar"
+            ></div>
+        </div>
+
+
+    `;
+
+
+    messages.appendChild(
+        generation
+    );
+
+
+    startConstellationAnimation();
+
+    scrollToBottom();
+
+}
+
+
+/* ========================================================= */
+/* IMAGE RECUE */
+/* ========================================================= */
+
+function receiveGeneratedImage(imageUrl) {
+
+    const image =
+        new Image();
+
+
+    image.onload =
+        function () {
+
+            stopConstellationAnimation();
+
+
+            const generation = document.getElementById("imageGeneration");
+
+            if (generation) {
+                generation.dataset.imageUrl = imageUrl;
+            }
+
+
+            adaptFrameToImage(
+                image.naturalWidth,
+                image.naturalHeight
+            );
+
+
+            /*
+                On attend que la transition de taille
+                soit suffisamment avancée avant de lancer
+                le feu d'artifice.
+            */
+
+            setTimeout(
+                () => {
+
+                    simulateOrbZoomReveal(
+                        image,
+                        currentImagePrompt,
+                        imageUrl
+                    );
+
+                },
+                650
+            );
+
+        };
+
+
+    image.onerror =
+        function () {
+
+            const status =
+                document.getElementById(
+                    "imageGenerationStatus"
+                );
+
+
+            if (status) {
+
+                status.textContent =
+                    "Impossible de charger l'image.";
+
+            }
+
+        };
+
+
+    image.src =
+        imageUrl;
+
+}
+
+
+/* ========================================================= */
+/* ADAPTATION A LA TAILLE / AU RATIO DE L'IMAGE */
+/* ========================================================= */
+
+function adaptFrameToImage(
+    naturalWidth,
+    naturalHeight
+) {
+
+    const frame =
+        document.getElementById(
+            "imageGenerationFrame"
+        );
+
+
+    if (!frame) {
+        return;
+    }
+
+
+    const parentWidth =
+        frame.parentElement.clientWidth;
+
+
+    const maxWidth =
+        Math.min(
+            parentWidth,
+            760
+        );
+
+
+    const maxHeight =
+        window.innerHeight *
+        (
+            window.matchMedia("(max-width: 760px)").matches
+                ? 0.54
+                : 0.68
+        );
+
+
+    const ratio =
+        naturalWidth /
+        naturalHeight;
+
+
+    let width =
+        maxWidth;
+
+
+    let height =
+        width /
+        ratio;
+
+
+    if (
+        height >
+        maxHeight
+    ) {
+
+        height =
+            maxHeight;
+
+        width =
+            height *
+            ratio;
+
+    }
+
+
+    frame.style.width =
+        width + "px";
+
+
+    frame.style.height =
+        height + "px";
+
+
+    frame.style.marginLeft =
+        "auto";
+
+
+    frame.style.marginRight =
+        "auto";
+
+
+    const progress =
+        document.getElementById(
+            "generationProgress"
+        );
+
+
+    if (progress) {
+
+        progress.style.width =
+            width + "px";
+
+    }
+
+}
+
+
+/* ========================================================= */
+/* REVELATION FEU D'ARTIFICE - 5 SECONDES */
+/* ========================================================= */
+
+function simulateOrbZoomReveal(image, promptText, imageUrl) {
+
+    const frame =
+        document.getElementById(
+            "imageGenerationFrame"
+        );
+
+
+    const constellationCanvas =
+        document.getElementById(
+            "constellationCanvas"
+        );
+
+
+    const imageCanvas =
+        document.getElementById(
+            "imageRevealCanvas"
+        );
+
+
+    const zoomCanvas =
+        document.getElementById(
+            "orbZoomCanvas"
+        );
+
+
+    const status =
+        document.getElementById(
+            "imageGenerationStatus"
+        );
+
+
+    const stageText =
+        document.getElementById(
+            "generationStageText"
+        );
+
+
+    const percent =
+        document.getElementById(
+            "imageGenerationPercent"
+        );
+
+
+    const progressBar =
+        document.getElementById(
+            "generationProgressBar"
+        );
+
+
+    const orb =
+        document.getElementById(
+            "generationOrb"
+        );
+
+
+    if (
+        !frame ||
+        !imageCanvas ||
+        !zoomCanvas ||
+        !orb
+    ) {
+        return;
+    }
+
+
+    frame.classList.remove(
+        "is-generating"
+    );
+
+
+    frame.classList.add(
+        "is-revealing"
+    );
+
+
+    remoteGenerationStatus = null;
+
+    remoteGenerationPercent = null;
+
+
+    constellationCanvas.style.opacity =
+        "0";
+
+
+    imageCanvas.style.opacity =
+        "1";
+
+
+    zoomCanvas.style.opacity =
+        "1";
+
+
+    const width =
+        Math.max(
+            1,
+            Math.round(
+                frame.clientWidth
+            )
+        );
+
+
+    const height =
+        Math.max(
+            1,
+            Math.round(
+                frame.clientHeight
+            )
+        );
+
+
+    const dpr =
+        Math.min(
+            window.devicePixelRatio || 1,
+            2
+        );
+
+
+    imageCanvas.width =
+        width * dpr;
+
+
+    imageCanvas.height =
+        height * dpr;
+
+
+    imageCanvas.style.width =
+        width + "px";
+
+
+    imageCanvas.style.height =
+        height + "px";
+
+
+    const imageCtx =
+        imageCanvas.getContext(
+            "2d"
+        );
+
+
+    imageCtx.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+
+    zoomCanvas.width =
+        width * dpr;
+
+
+    zoomCanvas.height =
+        height * dpr;
+
+
+    zoomCanvas.style.width =
+        width + "px";
+
+
+    zoomCanvas.style.height =
+        height + "px";
+
+
+    const zoomCtx =
+        zoomCanvas.getContext(
+            "2d"
+        );
+
+
+    zoomCtx.setTransform(
+        dpr,
+        0,
+        0,
+        dpr,
+        0,
+        0
+    );
+
+
+    const sourceCanvas =
+        document.createElement(
+            "canvas"
+        );
+
+
+    sourceCanvas.width =
+        width;
+
+
+    sourceCanvas.height =
+        height;
+
+
+    const sourceCtx =
+        sourceCanvas.getContext(
+            "2d"
+        );
+
+
+    sourceCtx.drawImage(
+        image,
+        0,
+        0,
+        width,
+        height
+    );
+
+
+    const duration =
+        10000;
+
+
+    let startTime =
+        null;
+
+
+    /*
+        Les fragments sont de petits morceaux
+        de la question de l'utilisateur.
+    */
+
+    function buildPromptFragments(text) {
+
+        const cleaned =
+            (text || "")
+                .replace(/[.,!?;:()\[\]{}"']/g, " ")
+                .replace(/\s+/g, " ")
+                .trim();
+
+
+        if (!cleaned) {
+            return [
+                "création",
+                "imagination",
+                "NathGPT"
+            ];
+        }
+
+
+        const words =
+            cleaned.split(" ");
+
+
+        const fragments =
+            [];
+
+
+        let index =
+            0;
+
+
+        while (
+            index < words.length &&
+            fragments.length < 12
+        ) {
+
+            const size =
+                1 +
+                Math.floor(
+                    Math.random() * 3
+                );
+
+
+            const part =
+                words
+                    .slice(
+                        index,
+                        index + size
+                    )
+                    .join(" ");
+
+
+            if (
+                part.length > 1
+            ) {
+                fragments.push(part);
+            }
+
+
+            index +=
+                size;
+
+        }
+
+
+        return fragments.length
+            ? fragments
+            : [cleaned];
+
+    }
+
+
+    const fragments =
+        buildPromptFragments(
+            promptText
+        );
+
+
+    /*
+        Etoiles visibles PENDANT le zoom.
+        Elles se trouvent dans le portail / la boule.
+    */
+
+    const portalStars =
+        [];
+
+
+    for (
+        let i = 0;
+        i < 210;
+        i++
+    ) {
+
+        portalStars.push({
+
+            angle:
+                Math.random() *
+                Math.PI *
+                2,
+
+            radius:
+                Math.sqrt(
+                    Math.random()
+                ),
+
+            size:
+                0.25 +
+                Math.random() *
+                0.75,
+
+            depth:
+                0.2 +
+                Math.random() *
+                0.8,
+
+            phase:
+                Math.random() *
+                Math.PI *
+                2,
+
+            opacity:
+                0.3 +
+                Math.random() *
+                0.7
+
+        });
+
+    }
+
+
+    const floatingTexts =
+        fragments.map(
+            (text, index) => ({
+
+                text,
+
+                angle:
+                    (
+                        index /
+                        Math.max(
+                            fragments.length,
+                            1
+                        )
+                    )
+                    *
+                    Math.PI *
+                    2
+                    +
+                    Math.random() *
+                    0.5,
+
+                radius:
+                    0.18 +
+                    Math.random() *
+                    0.65,
+
+                phase:
+                    Math.random() *
+                    Math.PI *
+                    2,
+
+                size:
+                    8 +
+                    Math.random() *
+                    4,
+
+                depth:
+                    0.45 +
+                    Math.random() *
+                    0.55
+
+            })
+        );
+
+
+    function clamp(value) {
+
+        return Math.min(
+            Math.max(
+                value,
+                0
+            ),
+            1
+        );
+
+    }
+
+
+    function easeInOutCubic(value) {
+
+        value =
+            clamp(value);
+
+
+        return value < 0.5
+            ? 4 *
+              value *
+              value *
+              value
+            : 1 -
+              Math.pow(
+                  -2 * value + 2,
+                  3
+              ) / 2;
+
+    }
+
+
+    function easeOutExpo(value) {
+
+        value =
+            clamp(value);
+
+
+        if (
+            value === 1
+        ) {
+            return 1;
+        }
+
+
+        return 1 -
+            Math.pow(
+                2,
+                -10 * value
+            );
+
+    }
+
+
+    const centerX =
+        width / 2;
+
+
+    const centerY =
+        height / 2;
+
+
+    const startRadius =
+        38;
+
+
+    const finalRadius =
+        Math.sqrt(
+            width * width +
+            height * height
+        ) * 0.64;
+
+
+    orb.classList.add(
+        "orb-portal-mode"
+    );
+
+
+    status.textContent =
+        "Image reçue — ouverture du noyau...";
+
+
+    stageText.textContent =
+        "Ouverture";
+
+
+    function drawPortalImage(
+        radius,
+        imageScale,
+        alpha
+    ) {
+
+        imageCtx.clearRect(
+            0,
+            0,
+            width,
+            height
+        );
+
+
+        imageCtx.save();
+
+
+        imageCtx.beginPath();
+
+
+        imageCtx.arc(
+            centerX,
+            centerY,
+            radius,
+            0,
+            Math.PI * 2
+        );
+
+
+        imageCtx.clip();
+
+
+        imageCtx.globalAlpha =
+            alpha;
+
+
+        const drawWidth =
+            width * imageScale;
+
+
+        const drawHeight =
+            height * imageScale;
+
+
+        imageCtx.drawImage(
+            sourceCanvas,
+            centerX -
+                drawWidth / 2,
+            centerY -
+                drawHeight / 2,
+            drawWidth,
+            drawHeight
+        );
+
+
+        /*
+            Léger voile lumineux sur les bords
+            de la boule pour donner l'impression
+            d'être à l'intérieur.
+        */
+
+        const vignette =
+            imageCtx.createRadialGradient(
+                centerX,
+                centerY,
+                radius * 0.40,
+                centerX,
+                centerY,
+                radius
+            );
+
+
+        vignette.addColorStop(
+            0,
+            "rgba(255,255,255,0)"
+        );
+
+
+        vignette.addColorStop(
+            0.72,
+            "rgba(110,140,255,0.02)"
+        );
+
+
+        vignette.addColorStop(
+            1,
+            "rgba(6,8,18,0.55)"
+        );
+
+
+        imageCtx.fillStyle =
+            vignette;
+
+
+        imageCtx.fillRect(
+            0,
+            0,
+            width,
+            height
+        );
+
+
+        imageCtx.restore();
+
+    }
+
+
+    function drawPortalStars(
+        elapsed,
+        radius,
+        portalAlpha,
+        zoomProgress
+    ) {
+
+        zoomCtx.clearRect(
+            0,
+            0,
+            width,
+            height
+        );
+
+
+        zoomCtx.save();
+
+
+        zoomCtx.beginPath();
+
+
+        zoomCtx.arc(
+            centerX,
+            centerY,
+            radius,
+            0,
+            Math.PI * 2
+        );
+
+
+        zoomCtx.clip();
+
+
+        /*
+            Quand on zoome, les étoiles donnent
+            l'impression de venir vers la caméra.
+        */
+
+        for (
+            const star
+            of portalStars
+        ) {
+
+            const travel =
+                1 +
+                zoomProgress *
+                (
+                    0.7 +
+                    star.depth * 2.6
+                );
+
+
+            const localRadius =
+                radius *
+                star.radius *
+                travel;
+
+
+            const angle =
+                star.angle +
+                Math.sin(
+                    elapsed * 0.00045 +
+                    star.phase
+                ) *
+                0.04;
+
+
+            const x =
+                centerX +
+                Math.cos(angle) *
+                localRadius;
+
+
+            const y =
+                centerY +
+                Math.sin(angle) *
+                localRadius;
+
+
+            const alpha =
+                portalAlpha *
+                star.opacity *
+                (
+                    1 -
+                    zoomProgress * 0.25
+                );
+
+
+            const size =
+                star.size *
+                (
+                    0.8 +
+                    star.depth *
+                    1.7 +
+                    zoomProgress * 1.2
+                );
+
+
+            const glow =
+                zoomCtx.createRadialGradient(
+                    x,
+                    y,
+                    0,
+                    x,
+                    y,
+                    Math.max(
+                        1.5,
+                        size * 4
+                    )
+                );
+
+
+            glow.addColorStop(
+                0,
+                `rgba(255,255,255,${alpha})`
+            );
+
+
+            glow.addColorStop(
+                0.35,
+                `rgba(170,200,255,${alpha * 0.35})`
+            );
+
+
+            glow.addColorStop(
+                1,
+                "rgba(90,120,255,0)"
+            );
+
+
+            zoomCtx.fillStyle =
+                glow;
+
+
+            zoomCtx.beginPath();
+
+
+            zoomCtx.arc(
+                x,
+                y,
+                Math.max(
+                    1.5,
+                    size * 4
+                ),
+                0,
+                Math.PI * 2
+            );
+
+
+            zoomCtx.fill();
+
+
+            zoomCtx.fillStyle =
+                `rgba(255,255,255,${alpha})`;
+
+
+            zoomCtx.beginPath();
+
+
+            zoomCtx.arc(
+                x,
+                y,
+                Math.max(
+                    0.25,
+                    size * 0.42
+                ),
+                0,
+                Math.PI * 2
+            );
+
+
+            zoomCtx.fill();
+
+        }
+
+
+        /*
+            Fragments de la question.
+            Ils restent subtils et disparaissent
+            avant l'image finale.
+        */
+
+        const textFade =
+            clamp(
+                1 -
+                Math.max(
+                    0,
+                    zoomProgress - 0.58
+                ) / 0.42
+            );
+
+
+        for (
+            const item
+            of floatingTexts
+        ) {
+
+            const orbit =
+                item.angle +
+                elapsed *
+                0.00006 *
+                (
+                    0.7 +
+                    item.depth
+                );
+
+
+            const textRadius =
+                radius *
+                item.radius *
+                (
+                    0.92 +
+                    zoomProgress *
+                    item.depth * 1.2
+                );
+
+
+            const x =
+                centerX +
+                Math.cos(orbit) *
+                textRadius;
+
+
+            const y =
+                centerY +
+                Math.sin(orbit) *
+                textRadius;
+
+
+            const alpha =
+                portalAlpha *
+                textFade *
+                0.68;
+
+
+            zoomCtx.save();
+
+
+            zoomCtx.globalAlpha =
+                alpha;
+
+
+            zoomCtx.font =
+                `${Math.round(item.size)}px Inter, system-ui, sans-serif`;
+
+
+            zoomCtx.textAlign =
+                "center";
+
+
+            zoomCtx.textBaseline =
+                "middle";
+
+
+            zoomCtx.shadowColor =
+                "rgba(110,145,255,0.55)";
+
+
+            zoomCtx.shadowBlur =
+                8;
+
+
+            zoomCtx.fillStyle =
+                "rgba(235,241,255,0.92)";
+
+
+            zoomCtx.fillText(
+                item.text,
+                x,
+                y
+            );
+
+
+            zoomCtx.restore();
+
+        }
+
+
+        zoomCtx.restore();
+
+
+        /*
+            Anneau du portail.
+        */
+
+        zoomCtx.save();
+
+
+        const ringAlpha =
+            portalAlpha *
+            clamp(
+                1 -
+                zoomProgress * 0.78
+            );
+
+
+        zoomCtx.strokeStyle =
+            `rgba(205,220,255,${ringAlpha * 0.82})`;
+
+
+        zoomCtx.lineWidth =
+            Math.max(
+                1,
+                2.2 -
+                zoomProgress
+            );
+
+
+        zoomCtx.shadowColor =
+            `rgba(110,145,255,${ringAlpha})`;
+
+
+        zoomCtx.shadowBlur =
+            16;
+
+
+        zoomCtx.beginPath();
+
+
+        zoomCtx.arc(
+            centerX,
+            centerY,
+            radius,
+            0,
+            Math.PI * 2
+        );
+
+
+        zoomCtx.stroke();
+
+
+        zoomCtx.restore();
+
+    }
+
+
+    function animate(timestamp) {
+
+        if (!startTime) {
+            startTime = timestamp;
+        }
+
+
+        const elapsed =
+            timestamp -
+            startTime;
+
+
+        const progress =
+            clamp(
+                elapsed /
+                duration
+            );
+
+
+        const percentValue =
+            92 + Math.round(
+                progress *
+                8
+            );
+
+
+        percent.textContent =
+            percentValue +
+            "%";
+
+
+        progressBar.style.width =
+            percentValue +
+            "%";
+
+
+        /*
+            0 → 1.6s : la boule se stabilise.
+            1.6 → 8.6s : zoom progressif dedans.
+            8.6 → 10s : image finale pleine.
+        */
+
+        const chargeProgress =
+            easeOutExpo(
+                elapsed /
+                1600
+            );
+
+
+        const zoomProgress =
+            easeInOutCubic(
+                (
+                    elapsed -
+                    1400
+                ) /
+                7200
+            );
+
+
+        const finalProgress =
+            easeInOutCubic(
+                (
+                    elapsed -
+                    8600
+                ) /
+                1400
+            );
+
+
+        const portalRadius =
+            startRadius +
+            (
+                finalRadius -
+                startRadius
+            ) *
+            zoomProgress;
+
+
+        const imageScale =
+            1.22 -
+            zoomProgress *
+            0.22;
+
+
+        const portalAlpha =
+            clamp(
+                chargeProgress *
+                (
+                    1 -
+                    finalProgress *
+                    0.70
+                )
+            );
+
+
+        drawPortalImage(
+            portalRadius,
+            imageScale,
+            Math.max(
+                0.18,
+                zoomProgress
+            )
+        );
+
+
+        drawPortalStars(
+            elapsed,
+            portalRadius,
+            portalAlpha,
+            zoomProgress
+        );
+
+
+        /*
+            La vraie boule DOM suit le début du zoom,
+            puis disparaît pour laisser le canvas
+            prendre toute la place.
+        */
+
+        if (
+            elapsed < 2400
+        ) {
+
+            const orbScale =
+                0.85 +
+                chargeProgress *
+                0.20 +
+                Math.sin(
+                    elapsed *
+                    0.018
+                ) *
+                0.025;
+
+
+            orb.style.opacity =
+                String(
+                    1 -
+                    zoomProgress *
+                    0.5
+                );
+
+
+            orb.style.top =
+                "50%";
+
+
+            orb.style.left =
+                "50%";
+
+
+            orb.style.transform =
+                `translate(-50%, -50%) scale(${orbScale})`;
+
+        }
+
+        else {
+
+            orb.style.opacity =
+                String(
+                    clamp(
+                        1 -
+                        (
+                            elapsed -
+                            2400
+                        ) /
+                        1400
+                    )
+                );
+
+        }
+
+
+        if (
+            elapsed < 1500
+        ) {
+
+            status.textContent =
+                "Le noyau se stabilise...";
+
+
+            stageText.textContent =
+                "Noyau";
+
+        }
+
+        else if (
+            elapsed < 4400
+        ) {
+
+            status.textContent =
+                "Zoom dans la constellation...";
+
+
+            stageText.textContent =
+                "Immersion";
+
+        }
+
+        else if (
+            elapsed < 7600
+        ) {
+
+            status.textContent =
+                "La demande prend forme dans les étoiles...";
+
+
+            stageText.textContent =
+                "Création";
+
+        }
+
+        else if (
+            elapsed < 9400
+        ) {
+
+            status.textContent =
+                "L'image émerge du noyau...";
+
+
+            stageText.textContent =
+                "Révélation";
+
+        }
+
+        else {
+
+            status.textContent =
+                "Finalisation de l'image...";
+
+
+            stageText.textContent =
+                "Finalisation";
+
+        }
+
+
+        if (
+            finalProgress > 0
+        ) {
+
+            imageCtx.save();
+
+
+            imageCtx.globalAlpha =
+                finalProgress;
+
+
+            imageCtx.globalCompositeOperation =
+                "source-over";
+
+
+            imageCtx.drawImage(
+                sourceCanvas,
+                0,
+                0,
+                width,
+                height
+            );
+
+
+            imageCtx.restore();
+
+
+            zoomCanvas.style.opacity =
+                String(
+                    1 -
+                    finalProgress
+                );
+
+        }
+
+
+        if (
+            progress < 1
+        ) {
+
+            imageRevealAnimationFrame =
+                requestAnimationFrame(
+                    animate
+                );
+
+        }
+
+        else {
+
+            imageCtx.clearRect(
+                0,
+                0,
+                width,
+                height
+            );
+
+
+            imageCtx.globalCompositeOperation =
+                "source-over";
+
+
+            imageCtx.globalAlpha =
+                1;
+
+
+            imageCtx.drawImage(
+                sourceCanvas,
+                0,
+                0,
+                width,
+                height
+            );
+
+
+            zoomCtx.clearRect(
+                0,
+                0,
+                width,
+                height
+            );
+
+
+            zoomCanvas.style.opacity =
+                "0";
+
+
+            frame.classList.remove(
+                "is-revealing"
+            );
+
+
+            frame.classList.add(
+                "is-complete"
+            );
+
+
+            orb.style.opacity =
+                "0";
+
+
+            status.textContent =
+                "Image générée";
+
+
+            stageText.textContent =
+                "Terminé";
+
+
+            percent.textContent =
+                "100%";
+
+
+            progressBar.style.width =
+                "100%";
+
+
+            showGeneratedImageActions(
+                frame.parentElement,
+                imageUrl
+            );
+
+
+            setTimeout(
+                () => {
+
+                    stageText.style.opacity =
+                        "0";
+
+
+                    percent.style.opacity =
+                        "0";
+
+                },
+                700
+            );
+
+
+            imageRevealAnimationFrame =
+                null;
+
+        }
+
+    }
+
+
+    imageRevealAnimationFrame =
+        requestAnimationFrame(
+            animate
+        );
+
+
+    scrollToBottom();
+
+}
+
+
+/* ========================================================= */
+/* CONSTELLATION D'ATTENTE */
+/* ========================================================= */
+
+function startConstellationAnimation() {
+
+    const canvas =
+        document.getElementById(
+            "constellationCanvas"
+        );
+
+
+    if (!canvas) {
+        return;
+    }
+
+
+    const frame =
+        canvas.parentElement;
+
+
+    const ctx =
+        canvas.getContext(
+            "2d"
+        );
+
+
+    const status =
+        document.getElementById(
+            "imageGenerationStatus"
+        );
+
+
+    const percent =
+        document.getElementById(
+            "imageGenerationPercent"
+        );
+
+
+    const progressBar =
+        document.getElementById(
+            "generationProgressBar"
+        );
+
+
+    const orb =
+        document.getElementById(
+            "generationOrb"
+        );
+
+
+    let width =
+        0;
+
+
+    let height =
+        0;
+
+
+    let start =
+        null;
+
+
+    const duration =
+        learnedGenerationDuration;
+
+
+    /*
+        Beaucoup plus d'étoiles,
+        beaucoup plus petites.
+    */
+
+    const starCount =
+        640;
+
+
+    const stars =
+        [];
+
+
+    function resize() {
+
+        width =
+            frame.clientWidth;
+
+
+        height =
+            frame.clientHeight;
+
+
+        const dpr =
+            Math.min(
+                window.devicePixelRatio || 1,
+                2
+            );
+
+
+        canvas.width =
+            width *
+            dpr;
+
+
+        canvas.height =
+            height *
+            dpr;
+
+
+        canvas.style.width =
+            width +
+            "px";
+
+
+        canvas.style.height =
+            height +
+            "px";
+
+
+        ctx.setTransform(
+            dpr,
+            0,
+            0,
+            dpr,
+            0,
+            0
+        );
+
+    }
+
+
+    resize();
+
+
+    constellationResizeHandler =
+        resize;
+
+
+    window.addEventListener(
+        "resize",
+        constellationResizeHandler
+    );
+
+
+    for (
+        let i = 0;
+        i < starCount;
+        i++
+    ) {
+
+        stars.push({
+
+            x:
+                Math.random(),
+
+            y:
+                Math.random(),
+
+            size:
+                0.18 +
+                Math.random() *
+                0.62,
+
+            glow:
+                0.8 +
+                Math.random() *
+                1.8,
+
+            phase:
+                Math.random() *
+                Math.PI *
+                2,
+
+            speed:
+                0.18 +
+                Math.random() *
+                0.55,
+
+            opacity:
+                0.28 +
+                Math.random() *
+                0.62,
+
+            /*
+                Environ 80% des étoiles forment
+                la boule. Les autres restent libres
+                dans tout le cadre.
+            */
+
+            attracted:
+                Math.random() < 0.80,
+
+            driftRadius:
+                4 +
+                Math.random() * 12,
+
+            angle:
+                Math.random() *
+                Math.PI *
+                2,
+
+            radius:
+                Math.sqrt(
+                    Math.random()
+                )
+                *
+                36
+
+        });
+
+    }
+
+
+    function animate(timestamp) {
+
+        if (!start) {
+            start = timestamp;
+        }
+
+
+        const elapsed =
+            timestamp -
+            start;
+
+
+        const rawProgress =
+            estimatedGenerationProgress(
+                elapsed,
+                duration
+            );
+
+
+        /*
+            Après 60 secondes,
+            on continue d'animer le ciel
+            sans bloquer à 100%.
+        */
+
+        const progress =
+            rawProgress;
+
+
+        ctx.clearRect(
+            0,
+            0,
+            width,
+            height
+        );
+
+
+        const cx =
+            width /
+            2;
+
+
+        const cy =
+            height /
+            2;
+
+
+        let gather =
+            Math.max(
+                (
+                    progress -
+                    0.25
+                )
+                /
+                0.75,
+                0
+            );
+
+
+        gather =
+            1 -
+            Math.pow(
+                1 -
+                gather,
+                3
+            );
+
+
+        const positions =
+            [];
+
+
+        stars.forEach(
+            star => {
+
+                const ox =
+                    star.x *
+                    width;
+
+
+                const oy =
+                    star.y *
+                    height;
+
+
+                const tx =
+                    cx +
+                    Math.cos(
+                        star.angle
+                    )
+                    *
+                    star.radius;
+
+
+                const ty =
+                    cy +
+                    Math.sin(
+                        star.angle
+                    )
+                    *
+                    star.radius;
+
+
+                const attraction =
+                    star.attracted
+                        ? gather
+                        : 0;
+
+
+                let x =
+                    ox +
+                    (
+                        tx -
+                        ox
+                    )
+                    *
+                    attraction;
+
+
+                let y =
+                    oy +
+                    (
+                        ty -
+                        oy
+                    )
+                    *
+                    attraction;
+
+
+                /*
+                    Les étoiles qui ne sont pas attirées
+                    continuent de flotter dans le cadre.
+                */
+
+                const freeStrength =
+                    star.attracted
+                        ? (
+                            1 -
+                            gather
+                          ) * 1.2
+                        : 1;
+
+
+                x +=
+                    Math.cos(
+                        timestamp *
+                        0.00045 *
+                        star.speed +
+                        star.phase
+                    )
+                    *
+                    star.driftRadius
+                    *
+                    freeStrength;
+
+
+                y +=
+                    Math.sin(
+                        timestamp *
+                        0.00055 *
+                        star.speed +
+                        star.phase
+                    )
+                    *
+                    star.driftRadius
+                    *
+                    freeStrength;
+
+
+                positions.push({
+                    x,
+                    y
+                });
+
+            }
+        );
+
+
+        /*
+            Connexions très fines.
+        */
+
+        ctx.lineWidth =
+            0.28;
+
+
+        const connectionDistance =
+            42;
+
+
+        const lineStarCount =
+            Math.min(
+                positions.length,
+                260
+            );
+
+
+        for (
+            let i = 0;
+            i < lineStarCount;
+            i++
+        ) {
+
+            for (
+                let j = i + 1;
+                j < lineStarCount;
+                j++
+            ) {
+
+                const dx =
+                    positions[i].x -
+                    positions[j].x;
+
+
+                const dy =
+                    positions[i].y -
+                    positions[j].y;
+
+
+                if (
+                    Math.abs(dx) >
+                    connectionDistance ||
+                    Math.abs(dy) >
+                    connectionDistance
+                ) {
+                    continue;
+                }
+
+
+                const distanceSq =
+                    dx * dx +
+                    dy * dy;
+
+
+                if (
+                    distanceSq >
+                    connectionDistance *
+                    connectionDistance
+                ) {
+                    continue;
+                }
+
+
+                const distance =
+                    Math.sqrt(
+                        distanceSq
+                    );
+
+
+                const alpha =
+                    (
+                        1 -
+                        distance /
+                        connectionDistance
+                    )
+                    *
+                    0.07;
+
+
+                ctx.strokeStyle =
+                    `rgba(170,200,255,${alpha})`;
+
+
+                ctx.beginPath();
+
+
+                ctx.moveTo(
+                    positions[i].x,
+                    positions[i].y
+                );
+
+
+                ctx.lineTo(
+                    positions[j].x,
+                    positions[j].y
+                );
+
+
+                ctx.stroke();
+
+            }
+
+        }
+
+
+        /*
+            Micro-étoiles.
+        */
+
+        positions.forEach(
+            (
+                position,
+                index
+            ) => {
+
+                const star =
+                    stars[index];
+
+
+                const pulse =
+                    0.72 +
+                    Math.sin(
+                        timestamp *
+                        0.0018 +
+                        star.phase
+                    )
+                    *
+                    0.28;
+
+
+                const alpha =
+                    star.opacity *
+                    pulse;
+
+
+                const glow =
+                    ctx.createRadialGradient(
+
+                        position.x,
+                        position.y,
+                        0,
+
+                        position.x,
+                        position.y,
+
+                        star.glow
+
+                    );
+
+
+                glow.addColorStop(
+                    0,
+                    `rgba(255,255,255,${alpha})`
+                );
+
+
+                glow.addColorStop(
+                    0.42,
+                    `rgba(180,205,255,${alpha * 0.28})`
+                );
+
+
+                glow.addColorStop(
+                    1,
+                    "rgba(120,150,255,0)"
+                );
+
+
+                ctx.fillStyle =
+                    glow;
+
+
+                ctx.beginPath();
+
+
+                ctx.arc(
+                    position.x,
+                    position.y,
+                    star.glow,
+                    0,
+                    Math.PI *
+                    2
+                );
+
+
+                ctx.fill();
+
+
+                ctx.fillStyle =
+                    `rgba(255,255,255,${Math.min(1, alpha + 0.1)})`;
+
+
+                ctx.beginPath();
+
+
+                ctx.arc(
+                    position.x,
+                    position.y,
+                    star.size,
+                    0,
+                    Math.PI *
+                    2
+                );
+
+
+                ctx.fill();
+
+            }
+        );
+
+
+        /*
+            Formation progressive d'une
+            petite boule centrale.
+        */
+
+        const orbProgress =
+            Math.max(
+                (
+                    progress -
+                    0.66
+                )
+                /
+                0.34,
+                0
+            );
+
+
+        orb.style.opacity =
+            String(
+                0.12 +
+                orbProgress *
+                0.88
+            );
+
+
+        orb.style.transform =
+            `
+            translate(-50%, -50%)
+            scale(${0.22 + orbProgress * 0.78})
+            `;
+
+
+        const percentage =
+            remoteGenerationPercent === null
+                ? Math.round(
+                    progress *
+                    100
+                )
+                : remoteGenerationPercent;
+
+
+        percent.textContent =
+            percentage +
+            "%";
+
+
+        progressBar.style.width =
+            percentage +
+            "%";
+
+
+        if (remoteGenerationStatus) {
+
+            status.textContent =
+                remoteGenerationStatus;
+
+        }
+
+        else if (
+            progress <
+            0.22
+        ) {
+
+            status.textContent =
+                "Création des micro-étoiles...";
+
+        }
+
+        else if (
+            progress <
+            0.50
+        ) {
+
+            status.textContent =
+                "Les constellations se dessinent...";
+
+        }
+
+        else if (
+            progress <
+            0.78
+        ) {
+
+            status.textContent =
+                "Les étoiles convergent...";
+
+        }
+
+        else {
+
+            status.textContent =
+                "Formation du noyau lumineux...";
+
+        }
+
+
+        constellationAnimationFrame =
+            requestAnimationFrame(
+                animate
+            );
+
+    }
+
+
+    constellationAnimationFrame =
+        requestAnimationFrame(
+            animate
+        );
+
+}
+
+
+/* ========================================================= */
+/* STOP CONSTELLATION */
+/* ========================================================= */
+
+function stopConstellationAnimation() {
+
+    if (
+        constellationAnimationFrame
+    ) {
+
+        cancelAnimationFrame(
+            constellationAnimationFrame
+        );
+
+
+        constellationAnimationFrame =
+            null;
+
+    }
+
+
+    if (
+        constellationResizeHandler
+    ) {
+
+        window.removeEventListener(
+            "resize",
+            constellationResizeHandler
+        );
+
+
+        constellationResizeHandler =
+            null;
+
+    }
+
+}
+
+
+/* ========================================================= */
+/* REMOVE IMAGE GENERATION */
+/* ========================================================= */
+
+/* ========================================================= */
+/* MODE CRICUT */
+/* ========================================================= */
+
+let cricutState = {
+    jobId: "",
+    total: 0,
+    current: 0,
+    remaining: "",
+    imageUrl: "",
+    status: "",
+    completed: false,
+    images: []
+};
+
+const cricutRecoveryKey = "nathgpt-cricut-job:" + (document.body.dataset.accountKey || "account");
+const cricutDatabaseName = "nathgpt-cricut-recovery";
+const cricutDatabaseStore = "reference-images";
+
+
+function readCricutRecovery() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(cricutRecoveryKey) || "null");
+        return saved && typeof saved === "object" ? saved : null;
+    }
+    catch (_) {
+        return null;
+    }
+}
+
+
+function persistCricutRecovery() {
+    if (!cricutState.jobId) {
+        return;
+    }
+
+    try {
+        localStorage.setItem(cricutRecoveryKey, JSON.stringify({
+            jobId: cricutState.jobId,
+            total: cricutState.total,
+            current: cricutState.current,
+            remaining: cricutState.remaining,
+            status: cricutState.status,
+            completed: cricutState.completed,
+            images: cricutState.images
+        }));
+    }
+    catch (_) {
+        // Le suivi continue même si le navigateur refuse le stockage local.
+    }
+}
+
+
+function openCricutDatabase() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(cricutDatabaseName, 1);
+        request.onupgradeneeded = () => request.result.createObjectStore(cricutDatabaseStore);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+    });
+}
+
+
+async function saveCricutReference(jobId, file) {
+    try {
+        const database = await openCricutDatabase();
+        await new Promise((resolve, reject) => {
+            const transaction = database.transaction(cricutDatabaseStore, "readwrite");
+            transaction.objectStore(cricutDatabaseStore).put(file, jobId);
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+        });
+        database.close();
+    }
+    catch (_) {
+        // Safari peut limiter IndexedDB en navigation privée : ce n'est pas bloquant.
+    }
+}
+
+
+async function getCricutReference(jobId) {
+    try {
+        const database = await openCricutDatabase();
+        const file = await new Promise((resolve, reject) => {
+            const request = database.transaction(cricutDatabaseStore, "readonly")
+                .objectStore(cricutDatabaseStore).get(jobId);
+            request.onsuccess = () => resolve(request.result || null);
+            request.onerror = () => reject(request.error);
+        });
+        database.close();
+        return file;
+    }
+    catch (_) {
+        return null;
+    }
+}
+
+
+async function removeSavedCricutReference(jobId) {
+    if (!jobId) {
+        return;
+    }
+    try {
+        const database = await openCricutDatabase();
+        await new Promise((resolve, reject) => {
+            const transaction = database.transaction(cricutDatabaseStore, "readwrite");
+            transaction.objectStore(cricutDatabaseStore).delete(jobId);
+            transaction.oncomplete = resolve;
+            transaction.onerror = () => reject(transaction.error);
+        });
+        database.close();
+    }
+    catch (_) {
+        // Rien à faire : l'ancien aperçu sera simplement remplacé plus tard.
+    }
+}
+
+
+function openCricutUploader() {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+    closeMobileHistory();
+    cricutImageInput?.click();
+}
+
+
+cricutImageInput?.addEventListener("change", function () {
+
+    const file = this.files && this.files[0];
+    this.value = "";
+
+    if (file) {
+        startCricutJob(file);
+    }
+});
+
+
+async function startCricutJob(file) {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+    isDiscordTurnActive = true;
+    currentTurnIsImage = false;
+    closeMobileHistory();
+    hideThinking();
+    removeImageGeneration();
+    welcome.style.display = "none";
+    const previousRecovery = readCricutRecovery();
+    localStorage.removeItem(cricutRecoveryKey);
+    removeSavedCricutReference(previousRecovery?.jobId);
+    showCricutGeneration(file);
+
+    try {
+        const formData = new FormData();
+        formData.append("reference_images", file, file.name);
+
+        const response = await fetch("/api/cricut/start", {
+            method: "POST",
+            body: formData
+        });
+        const payload = await response.json();
+
+        if (!response.ok) {
+            throw new Error(payload.error || "Impossible de démarrer le mode Cricut.");
+        }
+
+        cricutState.jobId = payload.job_id;
+        persistCricutRecovery();
+        saveCricutReference(payload.job_id, file);
+        if (payload.conversation_id) {
+            currentConversationId = payload.conversation_id;
+            rememberActiveConversation();
+            loadConversations();
+        }
+        listenForCricutEvents(payload.job_id);
+    }
+    catch (error) {
+        finishDiscordTurn();
+        removeCricutGeneration();
+        showErrorMessage(
+            error.message || "Impossible de démarrer le mode Cricut.",
+            () => startCricutJob(file)
+        );
+    }
+}
+
+
+function showCricutGeneration(file, savedState = null) {
+
+    removeCricutGeneration();
+
+    cricutState = {
+        jobId: savedState?.jobId || "",
+        total: Number(savedState?.total) || 0,
+        current: Number(savedState?.current) || 0,
+        remaining: savedState?.remaining || "",
+        imageUrl: file ? URL.createObjectURL(file) : "",
+        status: savedState?.status || "",
+        completed: Boolean(savedState?.completed),
+        images: Array.isArray(savedState?.images) ? savedState.images : []
+    };
+
+    const card = document.createElement("section");
+    card.id = "cricutGeneration";
+    card.className = "cricut-generation";
+    card.innerHTML = `
+        <div class="cricut-heading">
+            <span class="cricut-heading-orb">✦</span>
+            <div><strong>Adaptation Cricut</strong><small id="cricutStatus">Envoi de l'image à l'atelier…</small></div>
+        </div>
+        <div class="cricut-preview-frame">
+            <img class="cricut-source-image" alt="Image à adapter en stickers">
+            <span class="cricut-loupe loupe-one"></span>
+            <span class="cricut-loupe loupe-two"></span>
+            <span class="cricut-loupe loupe-three"></span>
+            <span class="cricut-scanline"></span>
+        </div>
+        <div class="cricut-progress-copy" id="cricutProgressCopy">Les contours sont analysés…</div>
+        <div class="cricut-sticker-grid" id="cricutStickerGrid" aria-live="polite"></div>
+        <div class="cricut-results" id="cricutResults"></div>
+    `;
+
+    const preview = card.querySelector(".cricut-source-image");
+    if (cricutState.imageUrl) {
+        preview.src = cricutState.imageUrl;
+        preview.onload = () => URL.revokeObjectURL(cricutState.imageUrl);
+    }
+    else {
+        preview.alt = "Image de référence restaurée";
+        preview.classList.add("is-unavailable");
+    }
+    messages.appendChild(card);
+    if (cricutState.status) {
+        updateCricutStatus(cricutState.status);
+    }
+    if (cricutState.total) {
+        updateCricutProgress(cricutState);
+    }
+    scrollToBottom();
+}
+
+
+function updateCricutStatus(message) {
+    const status = document.getElementById("cricutStatus");
+    const copy = document.getElementById("cricutProgressCopy");
+
+    if (status && message) {
+        status.textContent = message;
+    }
+    if (copy && message) {
+        copy.textContent = message;
+    }
+    cricutState.status = message || cricutState.status;
+    persistCricutRecovery();
+    scrollToBottom();
+}
+
+
+function updateCricutProgress(payload) {
+
+    cricutState.total = Math.max(cricutState.total, Number(payload.total) || 0);
+    cricutState.current = Math.min(
+        cricutState.total,
+        Math.max(cricutState.current, Number(payload.current) || 0)
+    );
+    cricutState.remaining = payload.remaining || cricutState.remaining;
+
+    const total = cricutState.total;
+    const current = cricutState.current;
+    const remaining = cricutState.remaining;
+    const status = document.getElementById("cricutStatus");
+    const copy = document.getElementById("cricutProgressCopy");
+    const grid = document.getElementById("cricutStickerGrid");
+
+    if (status) {
+        status.textContent = `${total} stickers à générer · ${current}/${total}`;
+    }
+    if (copy) {
+        copy.textContent = remaining
+            ? `Temps restant estimé : ${remaining} · Sticker ${current}/${total}`
+            : `Création des stickers · ${current}/${total}`;
+    }
+
+    if (!grid || !total) {
+        return;
+    }
+
+    const existingTotal = Number(grid.dataset.total || 0);
+    if (existingTotal !== total) {
+        grid.innerHTML = "";
+        grid.dataset.total = String(total);
+        const fragment = document.createDocumentFragment();
+
+        for (let index = 1; index <= total; index += 1) {
+            const tile = document.createElement("span");
+            tile.className = "cricut-sticker-tile";
+            tile.dataset.index = String(index);
+            tile.setAttribute("aria-label", `Sticker ${index} sur ${total}`);
+            tile.textContent = String(index);
+            fragment.appendChild(tile);
+        }
+        grid.appendChild(fragment);
+    }
+
+    grid.querySelectorAll(".cricut-sticker-tile").forEach((tile) => {
+        const index = Number(tile.dataset.index);
+        tile.classList.toggle("is-complete", index <= current);
+        tile.classList.toggle("is-active", current < total && index === current + 1);
+    });
+    persistCricutRecovery();
+    scrollToBottom();
+}
+
+
+function listenForCricutEvents(jobId, retryAttempt = 0) {
+
+    if (activeDiscordStream) {
+        activeDiscordStream.close();
+    }
+
+    const stream = new EventSource(
+        "/api/discord/jobs/" + encodeURIComponent(jobId) + "/events"
+    );
+    activeDiscordStream = stream;
+
+    stream.onmessage = function (event) {
+        const payload = JSON.parse(event.data);
+
+        if (payload.type === "keep-alive") {
+            return;
+        }
+
+        if (payload.type === "cricut_status") {
+            updateCricutStatus(payload.message || "Atelier Cricut en cours…");
+            return;
+        }
+
+        if (payload.type === "cricut_plan" || payload.type === "cricut_progress") {
+            updateCricutProgress(payload);
+            return;
+        }
+
+        stream.close();
+        if (activeDiscordStream === stream) {
+            activeDiscordStream = null;
+        }
+        finishDiscordTurn();
+
+        if (payload.type === "cricut_complete") {
+            completeCricutGeneration(payload.images || []);
+            notifyGenerationReady(
+                "Tes stickers sont prêts",
+                "NathGPT a terminé la préparation Cricut."
+            );
+        }
+        else {
+            updateCricutStatus(payload.message || "La génération Cricut a été interrompue.");
+        }
+    };
+
+    stream.onerror = function () {
+        if (activeDiscordStream !== stream || !isDiscordTurnActive) {
+            return;
+        }
+
+        stream.close();
+        activeDiscordStream = null;
+        if (retryAttempt < 2) {
+            updateCricutStatus("Reconnexion à l'atelier Cricut…");
+            window.setTimeout(() => {
+                if (isDiscordTurnActive && !activeDiscordStream) {
+                    listenForCricutEvents(jobId, retryAttempt + 1);
+                }
+            }, 1400);
+        }
+        else {
+            finishDiscordTurn();
+            updateCricutStatus("Le bot Discord ne répond plus. Tu peux actualiser la page pour reprendre le suivi.");
+        }
+    };
+}
+
+
+function completeCricutGeneration(images) {
+
+    const card = document.getElementById("cricutGeneration");
+    const results = document.getElementById("cricutResults");
+    const status = document.getElementById("cricutStatus");
+    const copy = document.getElementById("cricutProgressCopy");
+
+    cricutState.completed = true;
+    cricutState.images = Array.isArray(images) ? images : [];
+    cricutState.current = Math.max(cricutState.current, cricutState.total);
+    cricutState.status = "Stickers prêts";
+    persistCricutRecovery();
+
+    card?.classList.add("is-complete");
+    if (status) {
+        status.textContent = "Stickers prêts";
+    }
+    if (copy) {
+        copy.textContent = `${images.length} image${images.length > 1 ? "s" : ""} prête${images.length > 1 ? "s" : ""} à télécharger`;
+    }
+
+    if (!results) {
+        return;
+    }
+
+    appendCricutResultGallery(results, images);
+    scrollToBottom();
+}
+
+
+function appendCricutResultGallery(results, images) {
+
+    results.innerHTML = "";
+
+    if (!images.length) {
+        const note = document.createElement("p");
+        note.className = "cricut-empty-result";
+        note.textContent = "Le bot a terminé, mais aucune image n'a été reçue.";
+        results.appendChild(note);
+        return;
+    }
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "cricut-download-all";
+    button.textContent = "↓ Télécharger tous les stickers";
+    button.addEventListener("click", () => downloadAllCricutImages(images));
+    results.appendChild(button);
+
+    const gallery = document.createElement("div");
+    gallery.className = "cricut-result-gallery";
+    images.forEach((url, index) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `nathgpt-sticker-${index + 1}.png`;
+        link.target = "_blank";
+        link.rel = "noopener";
+
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = `Sticker généré ${index + 1}`;
+        image.loading = "lazy";
+        link.appendChild(image);
+        gallery.appendChild(link);
+    });
+    results.appendChild(gallery);
+}
+
+
+async function restoreCricutGeneration() {
+
+    const savedState = readCricutRecovery();
+    if (!savedState?.jobId || isDiscordTurnActive) {
+        return;
+    }
+
+    const sourceImage = await getCricutReference(savedState.jobId);
+    welcome.style.display = "none";
+    showCricutGeneration(sourceImage, savedState);
+
+    if (savedState.completed) {
+        completeCricutGeneration(savedState.images || []);
+        return;
+    }
+
+    isDiscordTurnActive = true;
+    updateCricutStatus(
+        savedState.status || "Reconnexion à l'atelier Cricut en cours…"
+    );
+    listenForCricutEvents(savedState.jobId);
+}
+
+
+function downloadAllCricutImages(images) {
+
+    images.forEach((url, index) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `nathgpt-sticker-${index + 1}.png`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    });
+}
+
+
+function removeCricutGeneration() {
+    const card = document.getElementById("cricutGeneration");
+    if (card) {
+        card.remove();
+    }
+}
+
+
+/* ========================================================= */
+/* REMOVE IMAGE GENERATION */
+/* ========================================================= */
+
+function removeImageGeneration() {
+
+    stopConstellationAnimation();
+
+
+    if (
+        imageRevealAnimationFrame
+    ) {
+
+        cancelAnimationFrame(
+            imageRevealAnimationFrame
+        );
+
+
+        imageRevealAnimationFrame =
+            null;
+
+    }
+
+
+    const old =
+        document.getElementById(
+            "imageGeneration"
+        );
+
+
+    if (old) {
+
+        old.remove();
+
+    }
+
+}
+
+
+/* ========================================================= */
+/* SCROLL */
+/* ========================================================= */
+
+function scrollToBottom() {
+
+    requestAnimationFrame(
+        () => {
+
+            conversation.scrollTo({
+
+                top:
+                    conversation.scrollHeight,
+
+                behavior:
+                    "smooth"
+
+            });
+
+        }
+    );
+
+}
+
+
+/* ========================================================= */
+/* NEW CHAT */
+/* ========================================================= */
+
+function newChat() {
+
+    closeMobileHistory();
+
+    hideThinking();
+
+
+    if (activeDiscordStream) {
+        activeDiscordStream.close();
+        activeDiscordStream = null;
+    }
+
+
+    isDiscordTurnActive = false;
+
+    currentConversationId = createConversationId();
+
+    rememberActiveConversation();
+
+    removeImageGeneration();
+    removeCricutGeneration();
+
+
+    messages.innerHTML =
+        "";
+
+
+    loadConversations();
+
+
+    welcome.style.display =
+        "flex";
+
+
+    input.value =
+        "";
+
+
+    input.style.height =
+        "auto";
+
+
+    sendButton.disabled =
+        true;
+
+
+    currentImagePrompt =
+        "";
+
+
+    input.focus();
+
+}
+
+
+input.focus();
+
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/service-worker.js").catch(() => {
+        // Le chat reste utilisable si le navigateur ne prend pas en charge la PWA.
+    });
+}
+
+function finishLaunchScreen() {
+    const screen = document.getElementById("launchScreen");
+    if (!screen) {
+        return;
+    }
+
+    window.setTimeout(() => {
+        screen.classList.add("is-finished");
+        window.setTimeout(() => screen.remove(), 520);
+    }, 780);
+}
+
+window.addEventListener("load", finishLaunchScreen, { once: true });
+window.setTimeout(finishLaunchScreen, 3500);
+
+// Vibration légère uniquement là où l'API est disponible (notamment Android).
+// Safari iPhone ne propose généralement pas cette API, sans empêcher l'animation.
+if (navigator.vibrate && !sessionStorage.getItem("nathgpt-launch-haptic")) {
+    navigator.vibrate([9, 35, 13]);
+    sessionStorage.setItem("nathgpt-launch-haptic", "1");
+}
+
+loadConversations();
+restoreCricutGeneration();
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        closeMobileHistory();
+    }
+});
+
+</script>
+
+</body>
+</html>

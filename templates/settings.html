@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#202725">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
+    <link rel="icon" type="image/png" href="/logo.png?v={{ asset_version }}">
+    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ asset_version }}">
+    <meta name="apple-mobile-web-app-title" content="NathGPT">
+    <title>Paramètres - NathGPT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
+</head>
+<body class="settings-page">
+    <main class="settings-shell">
+        <header class="settings-header">
+            <div class="settings-brand">
+                <img src="/logo.png" alt="NathGPT">
+                <div>
+                    <p>Mon espace</p>
+                    <h1>Paramètres</h1>
+                </div>
+            </div>
+            <a class="staff-return" href="{{ url_for('chat') }}">Retour au chat</a>
+        </header>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="flash {{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <section class="settings-card">
+            <p class="settings-eyebrow">Compte</p>
+            <h2>{{ username }}</h2>
+            <dl class="settings-details">
+                <div><dt>Créé le</dt><dd>{{ account.created_at or "Inconnue" }}</dd></div>
+                <div><dt>Dernière activité</dt><dd>{{ account.last_seen_at or account.last_login_at or "Inconnue" }}</dd></div>
+            </dl>
+            <a class="settings-logout" href="{{ url_for('logout') }}">Se déconnecter</a>
+        </section>
+
+        <section class="settings-card settings-notifications">
+            <p class="settings-eyebrow">Notifications</p>
+            <h2>Me prévenir quand c'est prêt</h2>
+            <p>
+                Reçois une alerte lorsque NathGPT termine une image ou une préparation Cricut,
+                même si tu consultes une autre app.
+            </p>
+            <button id="enableNotifications" class="settings-notification-button" type="button">Activer les notifications</button>
+            <small id="notificationHelp" class="settings-notification-help"></small>
+        </section>
+
+        <section class="settings-card settings-danger">
+            <p class="settings-eyebrow">Zone sensible</p>
+            <h2>Supprimer mon compte</h2>
+            <p>
+                Cette action supprime définitivement ton compte, toutes les conversations enregistrées
+                et les salons Discord associés. Elle ne peut pas être annulée.
+            </p>
+            <form method="POST" action="{{ url_for('delete_own_account') }}" class="settings-delete-form">
+                <input type="hidden" name="csrf_token" value="{{ settings_csrf_token }}">
+                <label for="deletePassword">Mot de passe actuel</label>
+                <input id="deletePassword" type="password" name="password" autocomplete="current-password" required>
+                <label for="deleteConfirmation">Pour confirmer, écris <strong>SUPPRIMER MON COMPTE</strong></label>
+                <input id="deleteConfirmation" type="text" name="confirmation" autocomplete="off" required>
+                <button class="settings-delete-button" type="submit">Supprimer définitivement mon compte</button>
+            </form>
+        </section>
+    </main>
+    <script>
+        const notificationButton = document.getElementById("enableNotifications");
+        const notificationHelp = document.getElementById("notificationHelp");
+
+        function isIosStandalone() {
+            return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+        }
+
+        function updateNotificationUi(message) {
+            if (!("Notification" in window)) {
+                notificationButton.disabled = true;
+                notificationHelp.textContent = "Les notifications ne sont pas disponibles dans ce navigateur.";
+                return;
+            }
+            if (Notification.permission === "granted") {
+                notificationButton.disabled = true;
+                notificationButton.textContent = "✓ Notifications activées";
+                notificationHelp.textContent = "Tu seras averti lorsqu'une génération se termine.";
+                return;
+            }
+            notificationHelp.textContent = message || "Tu pourras modifier cette autorisation dans les réglages du navigateur.";
+        }
+
+        notificationButton.addEventListener("click", async () => {
+            const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            if (isIos && !isIosStandalone()) {
+                updateNotificationUi("Sur iPhone : ouvre ce site dans Safari, touche Partager puis « Sur l’écran d’accueil ». Ouvre ensuite NathGPT depuis son icône.");
+                return;
+            }
+            try {
+                if ("serviceWorker" in navigator) {
+                    await navigator.serviceWorker.register("/service-worker.js");
+                }
+                const permission = await Notification.requestPermission();
+                updateNotificationUi(permission === "granted" ? "" : "Autorisation non accordée. Tu peux réessayer ou vérifier les réglages du navigateur.");
+            }
+            catch (_) {
+                updateNotificationUi("Impossible d'activer les notifications sur cet appareil.");
+            }
+        });
+
+        updateNotificationUi();
+    </script>
+</body>
+</html>
