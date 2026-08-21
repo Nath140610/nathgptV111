@@ -365,6 +365,8 @@ let staffLogoClickCount = 0;
 let staffLogoClickTimer = null;
 let serviceOutage = null;
 let serviceStatusTimer = null;
+let queueWaitState = null;
+let queueWaitTimer = null;
 
 const pendingDiscordTurnKey = "nathgpt-pending-discord-turn:" + (document.body.dataset.accountKey || "account");
 
@@ -396,6 +398,21 @@ function readPendingDiscordTurn() {
 
 function clearPendingDiscordTurn() {
     localStorage.removeItem(pendingDiscordTurnKey);
+}
+
+
+function savePendingQueueState(queue) {
+    try {
+        const pending = readPendingDiscordTurn();
+        if (!pending) {
+            return;
+        }
+        pending.queue = queue;
+        localStorage.setItem(pendingDiscordTurnKey, JSON.stringify(pending));
+    }
+    catch (_) {
+        // Le compte à rebours reste visible même si le navigateur bloque le stockage.
+    }
 }
 
 
@@ -1042,6 +1059,16 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
 
         if (payload.type === "status") {
 
+            const queue = parseQueueStatus(payload.message);
+            if (queue) {
+                hideThinking();
+                removeImageGeneration();
+                showQueueWait(queue);
+                return;
+            }
+
+            hideQueueWait();
+
             if (currentTurnIsImage) {
 
                 if (!document.getElementById("imageGeneration")) {
@@ -1126,6 +1153,8 @@ function finishDiscordTurn() {
 
     currentTurnIsImage = false;
 
+    hideQueueWait();
+
     sendButton.disabled = Boolean(serviceOutage?.outage) || input.value.trim() === "";
 }
 
@@ -1143,7 +1172,12 @@ function restorePendingDiscordTurn() {
     rememberActiveConversation();
     welcome.style.display = "none";
 
-    if (currentTurnIsImage) {
+    if (pending.queue) {
+        hideThinking();
+        removeImageGeneration();
+        showQueueWait(pending.queue, pending.queue);
+    }
+    else if (currentTurnIsImage) {
         showImageGeneration();
         updateImageGenerationProgress("Reprise de la génération en cours…");
     }
@@ -1177,7 +1211,12 @@ function reconnectPendingDiscordTurn() {
     rememberActiveConversation();
     welcome.style.display = "none";
 
-    if (currentTurnIsImage) {
+    if (pending.queue) {
+        hideThinking();
+        removeImageGeneration();
+        showQueueWait(pending.queue, pending.queue);
+    }
+    else if (currentTurnIsImage) {
         if (!document.getElementById("imageGeneration")) {
             hideThinking();
             showImageGeneration();
@@ -1222,6 +1261,118 @@ function updateThinkingStatus() {
     if (label) {
         label.textContent = "NathGPT réfléchit...";
     }
+}
+
+
+function parseQueueStatus(message) {
+    const text = String(message || "").replace(/\s+/g, " ").trim();
+    if (!/demande\s+en\s+attente|file\s+d['’]attente|queue|queued/i.test(text)) {
+        return null;
+    }
+
+    const match = text.match(/(?:position\s*)?(\d+)\s*(?:\/|sur)\s*(\d+)/i);
+    if (!match) {
+        return null;
+    }
+
+    const position = Math.max(1, Number(match[1]) || 1);
+    const total = Math.max(position, Number(match[2]) || position);
+    return { position, total };
+}
+
+
+function formatQueueDuration(seconds) {
+    const safeSeconds = Math.max(0, Math.ceil(seconds));
+    const minutes = Math.floor(safeSeconds / 60);
+    const remainder = safeSeconds % 60;
+    return String(minutes).padStart(2, "0") + ":" + String(remainder).padStart(2, "0");
+}
+
+
+function updateQueueWaitCard() {
+    const card = document.getElementById("queueWaitCard");
+    if (!card || !queueWaitState) {
+        return;
+    }
+
+    const totalSeconds = Math.max(60, queueWaitState.estimatedSeconds || 60);
+    const secondsLeft = Math.max(0, (queueWaitState.startedAt + totalSeconds * 1000 - Date.now()) / 1000);
+    const elapsedRatio = Math.min(1, Math.max(0, 1 - secondsLeft / totalSeconds));
+    const timeLabel = card.querySelector("[data-queue-time]");
+    const positionLabel = card.querySelector("[data-queue-position]");
+    const ring = card.querySelector(".queue-wait-ring");
+    const caption = card.querySelector("[data-queue-caption]");
+
+    if (timeLabel) {
+        timeLabel.textContent = formatQueueDuration(secondsLeft);
+    }
+    if (positionLabel) {
+        positionLabel.textContent = "Position " + queueWaitState.position + " / " + queueWaitState.total;
+    }
+    if (ring) {
+        ring.style.setProperty("--queue-progress", Math.round(elapsedRatio * 360) + "deg");
+    }
+    if (caption) {
+        caption.textContent = secondsLeft > 0
+            ? "Temps estimé : environ " + Math.max(1, Math.ceil(secondsLeft / 60)) + " min"
+            : "Ton passage devrait commencer très bientôt";
+    }
+}
+
+
+function showQueueWait(queue, savedState = null) {
+    const current = queueWaitState;
+    const sameQueue = current
+        && current.position === queue.position
+        && current.total === queue.total;
+    const estimatedSeconds = Math.max(60, queue.position * 60);
+
+    queueWaitState = sameQueue
+        ? current
+        : {
+            position: queue.position,
+            total: queue.total,
+            estimatedSeconds: savedState?.estimatedSeconds || estimatedSeconds,
+            startedAt: savedState?.startedAt || Date.now()
+        };
+
+    let card = document.getElementById("queueWaitCard");
+    if (!card) {
+        card = document.createElement("section");
+        card.id = "queueWaitCard";
+        card.className = "queue-wait-card";
+        card.setAttribute("role", "status");
+        card.setAttribute("aria-live", "polite");
+        card.innerHTML = `
+            <span class="queue-wait-star star-one">✦</span><span class="queue-wait-star star-two">✧</span>
+            <div class="queue-wait-ring"><div class="queue-wait-clock"><b data-queue-time>01:00</b><span>min</span></div></div>
+            <div class="queue-wait-copy">
+                <span data-queue-position></span>
+                <strong>Tu es dans la file d’attente</strong>
+                <p>Une autre personne utilise NathGPT. Ta demande sera traitée dès que possible.</p>
+                <small data-queue-caption></small>
+            </div>
+        `;
+        messages.appendChild(card);
+        scrollToBottom();
+    }
+
+    savePendingQueueState(queueWaitState);
+    updateQueueWaitCard();
+    if (!queueWaitTimer) {
+        queueWaitTimer = window.setInterval(updateQueueWaitCard, 1000);
+    }
+}
+
+
+function hideQueueWait() {
+    if (queueWaitTimer) {
+        window.clearInterval(queueWaitTimer);
+        queueWaitTimer = null;
+    }
+    queueWaitState = null;
+    document.getElementById("queueWaitCard")?.remove();
+    savePendingQueueState(null);
 }
 
 

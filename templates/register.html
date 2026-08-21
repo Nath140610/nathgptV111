@@ -6,11 +6,24 @@
     <title>Créer un compte - NathGPT</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
 </head>
-<body class="auth-page">
-    <div class="auth-card">
+<body class="auth-page register-page">
+    <div class="auth-card register-card">
         <img src="/logo.png" class="auth-logo" alt="Logo NathGPT">
         <h1>Créer un compte</h1>
         <p class="subtitle">Bienvenue sur NathGPT</p>
+
+        <section class="account-comparison" aria-label="Comparaison des accès">
+            <article class="access-bubble access-bubble-chatgpt">
+                <span class="access-bubble-brand">ChatGPT</span>
+                <strong>Accès limité aux modèles</strong>
+                <small>3 images par jour</small>
+            </article>
+            <article class="access-bubble access-bubble-nathgpt">
+                <span class="access-bubble-brand">NathGPT</span>
+                <strong>Accès aux modèles les plus puissants</strong>
+                <small>Images illimitées</small>
+            </article>
+        </section>
 
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
