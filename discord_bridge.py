@@ -8,6 +8,7 @@ from pathlib import Path
 from queue import Empty, Queue
 import re
 import threading
+import time
 import uuid
 
 
@@ -57,6 +58,14 @@ class DiscordBridge:
         self.connect_timeout = min(
             90,
             max(30, int(os.environ.get("DISCORD_CONNECT_TIMEOUT_SECONDS", "60")))
+        )
+        self.reconnect_initial_delay = min(
+            30,
+            max(2, int(os.environ.get("DISCORD_RECONNECT_INITIAL_SECONDS", "3")))
+        )
+        self.disconnect_grace = min(
+            180,
+            max(20, int(os.environ.get("DISCORD_DISCONNECT_GRACE_SECONDS", "45")))
         )
         self.store_path = data_dir / "discord_conversations.json"
         self.image_store_path = data_dir / "discord_image_messages.json"
@@ -263,16 +272,32 @@ class DiscordBridge:
         return job["conversation_id"]
 
     def _run(self):
-        try:
-            asyncio.run(self._run_client())
-        except Exception as error:
-            self._startup_error = (
-                "La connexion du bot Discord a échoué : "
-                f"{type(error).__name__}. Vérifie DISCORD_TOKEN et les intents."
-            )
-            self._started = False
+        """Garde le client Discord vivant et le relance après toute coupure."""
+        retry_delay = self.reconnect_initial_delay
+
+        while self.enabled:
+            try:
+                asyncio.run(self._run_client())
+                reason = "la connexion Discord s'est arrêtée"
+            except Exception as error:
+                reason = f"erreur Discord {type(error).__name__}"
+
             self._ready.clear()
-            print(self._startup_error, flush=True)
+            with self._lock:
+                self._loop = None
+                self._client = None
+                # Une erreur transitoire ne bloque pas les tentatives suivantes.
+                self._startup_error = None
+
+            print(
+                f"{reason} ; nouvelle tentative dans {retry_delay} secondes...",
+                flush=True,
+            )
+            time.sleep(retry_delay)
+            retry_delay = min(60, retry_delay * 2)
+
+        with self._lock:
+            self._started = False
 
     async def _run_client(self):
         self._loop = asyncio.get_running_loop()
@@ -280,28 +305,55 @@ class DiscordBridge:
         intents = self._discord.Intents.default()
         intents.message_content = True
         self._client = self._discord.Client(intents=intents)
+        client = self._client
+        disconnect_watchdog = None
 
-        @self._client.event
+        @client.event
         async def on_ready():
+            nonlocal disconnect_watchdog
+            if disconnect_watchdog and not disconnect_watchdog.done():
+                disconnect_watchdog.cancel()
+            disconnect_watchdog = None
             self._ready.set()
-            print(f"Bot Discord connecté : {self._client.user}", flush=True)
+            self._startup_error = None
+            print(f"Bot Discord connecté : {client.user}", flush=True)
 
-        @self._client.event
+        @client.event
         async def on_disconnect():
+            nonlocal disconnect_watchdog
             self._ready.clear()
 
-        @self._client.event
+            # discord.py tente déjà de se reconnecter seul. Si son mécanisme
+            # reste coincé trop longtemps, on ferme proprement le client afin
+            # que la boucle _run() recrée une connexion neuve.
+            if disconnect_watchdog and not disconnect_watchdog.done():
+                return
+
+            async def force_fresh_connection():
+                try:
+                    await asyncio.sleep(self.disconnect_grace)
+                    if self._client is client and not self._ready.is_set():
+                        print("Discord toujours déconnecté ; reconnexion forcée...", flush=True)
+                        await client.close()
+                except asyncio.CancelledError:
+                    return
+
+            disconnect_watchdog = asyncio.create_task(force_fresh_connection())
+
+        @client.event
         async def on_message(message):
             await self._handle_message(message)
 
-        @self._client.event
+        @client.event
         async def on_message_edit(before, after):
             await self._handle_message(after)
 
         try:
-            await self._client.start(self.token)
+            await client.start(self.token, reconnect=True)
         finally:
             self._ready.clear()
+            if disconnect_watchdog and not disconnect_watchdog.done():
+                disconnect_watchdog.cancel()
 
     def delete_user_conversations(self, username):
         """Supprime les salons Discord appartenant au compte indiquÃ©.

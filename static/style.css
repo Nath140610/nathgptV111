@@ -109,6 +109,35 @@ textarea {
 @keyframes launch-orbit-dot { 0% { transform: rotate(0deg) translateX(0); } 100% { transform: rotate(360deg) translateX(0); } }
 @keyframes launch-star { 0%,100% { opacity: .24; transform: scale(.72) rotate(0); } 50% { opacity: 1; transform: scale(1.28) rotate(17deg); } }
 
+/* Écran de lancement : rendu prévisible dans une PWA iOS et animation légère. */
+.launch-screen { z-index: 9999; min-height: 100svh; gap: 13px; padding: max(30px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(30px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: radial-gradient(circle at 50% 43%, rgba(104,255,190,.17), transparent 21%), radial-gradient(circle at 17% 88%, rgba(95,134,255,.16), transparent 42%), radial-gradient(circle at 87% 14%, rgba(70,214,172,.13), transparent 36%), #1c2422; transition: opacity .48s cubic-bezier(.2,.8,.2,1), visibility 0s linear .48s, filter .48s ease; -webkit-transform: translateZ(0); transform: translateZ(0); }
+.launch-screen.is-finished { filter: blur(6px); }
+.launch-grid { position: absolute; z-index: -2; inset: -20%; opacity: .22; background-image: linear-gradient(rgba(168,255,216,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(168,255,216,.07) 1px, transparent 1px); background-size: 34px 34px; -webkit-mask-image: radial-gradient(ellipse at center, #000 8%, transparent 66%); mask-image: radial-gradient(ellipse at center, #000 8%, transparent 66%); transform: perspective(540px) rotateX(55deg) translateY(26%); transform-origin: center bottom; }
+.launch-aurora { position: absolute; z-index: -1; width: min(120vw, 670px); aspect-ratio: 1.75; border-radius: 50%; filter: blur(34px); opacity: .55; will-change: transform; }
+.launch-aurora-one { top: 12%; left: -30%; background: rgba(67,215,160,.20); animation: launch-aurora-one 6s ease-in-out infinite alternate; }
+.launch-aurora-two { right: -34%; bottom: 11%; background: rgba(102,128,255,.20); animation: launch-aurora-two 7s ease-in-out infinite alternate; }
+.launch-rings { position: absolute; z-index: -1; width: min(72vw, 330px); aspect-ratio: 1; }
+.launch-rings i { position: absolute; inset: 0; border: 1px solid rgba(190,255,223,.13); border-radius: 50%; animation: launch-ring 3.3s cubic-bezier(.12,.7,.22,1) infinite; }
+.launch-rings i:nth-child(2) { animation-delay: 1.1s; }
+.launch-rings i:nth-child(3) { animation-delay: 2.2s; }
+.launch-logo-shell { width: 114px; height: 114px; border-color: rgba(224,255,237,.56); border-radius: 36px; box-shadow: inset 0 1px rgba(255,255,255,.52), 0 0 0 10px rgba(104,255,181,.07), 0 0 54px rgba(81,246,167,.24), 0 30px 62px rgba(0,0,0,.36); -webkit-transform: translateZ(0); }
+.launch-logo-shell img { position: relative; z-index: 1; width: 86px; height: 86px; border-radius: 27px; }
+.launch-logo-reflection { position: absolute; z-index: 2; top: 8px; left: 13px; width: 45%; height: 23%; border-radius: 50%; pointer-events: none; background: linear-gradient(145deg, rgba(255,255,255,.56), rgba(255,255,255,0)); filter: blur(2px); transform: rotate(-19deg); }
+.launch-copy { gap: 6px; margin-top: 6px; }
+.launch-copy strong { font-size: 29px; letter-spacing: -.058em; }
+.launch-copy span { color: #c8dcd1; }
+.launch-progress { width: min(244px, 72vw); height: 8px; margin-top: 8px; border-color: rgba(222,255,237,.16); background: rgba(255,255,255,.07); }
+.launch-progress i { width: 0; animation: launch-progress-fill 1.05s .12s cubic-bezier(.18,.82,.22,1) forwards; }
+.launch-progress i b { display: block; width: 35%; height: 100%; border-radius: inherit; background: rgba(255,255,255,.64); filter: blur(4px); animation: launch-progress-sheen 1.05s .22s ease-in-out forwards; }
+.launch-progress-meta { display: flex; width: min(244px, 72vw); justify-content: space-between; color: rgba(210,231,220,.68); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
+.launch-progress-meta em { font-style: normal; font-variant-numeric: tabular-nums; }
+@keyframes launch-progress-fill { 0% { width: 0; } 70% { width: 86%; } 100% { width: 100%; } }
+@keyframes launch-progress-sheen { from { transform: translateX(-180%); } to { transform: translateX(420%); } }
+@keyframes launch-ring { 0% { opacity: .9; transform: scale(.26); } 75%,100% { opacity: 0; transform: scale(1.25); } }
+@keyframes launch-aurora-one { to { transform: translate3d(24%, -10%, 0) rotate(12deg); } }
+@keyframes launch-aurora-two { to { transform: translate3d(-23%, 8%, 0) rotate(-14deg); } }
+@media (prefers-reduced-motion: reduce) { .launch-screen *, .launch-screen::before { animation-duration: .01ms !important; animation-iteration-count: 1 !important; } }
+
 
 /* ========================================================= */
 /* AUTH */
@@ -3006,6 +3035,12 @@ textarea::placeholder {
 
 .chat-error-copy strong { display: block; font-size: 15px; }
 .chat-error-copy p { margin: 7px 0 0; color: #f0c8ca; font-size: 13px; line-height: 1.5; }
+.bot-restart-card { border-color: rgba(255, 177, 141, .40); background: linear-gradient(135deg, rgba(102,44,50,.96), rgba(47,34,39,.94)); }
+.bot-restart-icon { font-size: 25px; animation: bot-restart-spin 1.15s linear infinite, chat-error-icon .58s .12s cubic-bezier(.17,1.45,.3,1) both; }
+.bot-restart-progress { position: relative; height: 7px; max-width: 290px; margin-top: 13px; overflow: hidden; border: 1px solid rgba(255,219,201,.20); border-radius: 999px; background: rgba(10,7,9,.28); }
+.bot-restart-progress span { display: block; width: 3%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #ff8c96, #ffd18f); box-shadow: 0 0 16px rgba(255,168,137,.75); transition: width .18s linear; }
+.bot-restart-progress em { position: absolute; top: 12px; left: 0; color: #f8d7d1; font-size: 11px; font-style: normal; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bot-restart-card .chat-error-retry { margin-top: 29px; }
 .chat-error-retry { width: max-content; margin-top: 15px; padding: 8px 12px; border: 1px solid rgba(255,207,204,.30); border-radius: 10px; color: #fff8f7; background: rgba(255,255,255,.10); font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; transition: transform .18s ease, background .18s ease; }
 .chat-error-retry:hover { background: rgba(255,255,255,.17); transform: translateY(-1px); }
 .chat-error-retry:disabled { opacity: .7; cursor: wait; }
@@ -3232,6 +3267,7 @@ textarea::placeholder {
 @keyframes chat-error-orbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @keyframes chat-error-spark { 0%,100% { opacity: .25; transform: scale(.7); } 50% { opacity: .95; transform: scale(1.22); } }
 @keyframes chat-error-retry-out { to { opacity: 0; transform: scale(.93); filter: blur(5px); } }
+@keyframes bot-restart-spin { to { transform: rotate(360deg); } }
 
 
 /* ========================================================= */

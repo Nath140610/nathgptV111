@@ -1,8 +1,8 @@
-const CACHE_NAME = "nathgpt-shell-v3";
+const CACHE_NAME = "nathgpt-shell-v4";
 const APP_SHELL = [
     "/static/style.css",
-    "/static/manifest.webmanifest?v=2",
-    "/logo.png?v=2"
+    "/static/manifest.webmanifest?v=3",
+    "/logo.png?v=3"
 ];
 
 self.addEventListener("install", (event) => {

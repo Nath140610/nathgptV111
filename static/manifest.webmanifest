@@ -6,11 +6,11 @@
   "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#202120",
-  "theme_color": "#202725",
+  "background_color": "#1c2422",
+  "theme_color": "#1c2422",
   "icons": [
     {
-      "src": "/logo.png?v=2",
+      "src": "/logo.png?v=3",
       "sizes": "800x800",
       "type": "image/png",
       "purpose": "any maskable"

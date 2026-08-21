@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#202725">
+    <meta name="theme-color" content="#1c2422">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
@@ -11,6 +11,14 @@
     <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ asset_version }}">
     <meta name="apple-mobile-web-app-title" content="NathGPT">
     <title>NathGPT</title>
+
+    <!-- Évite l'écran noir/non stylé visible quelques instants par iOS avant
+         le téléchargement de la feuille CSS principale. -->
+    <style>
+        html { min-height: 100%; background: #1c2422; }
+        body { min-height: 100vh; margin: 0; background: #1c2422; }
+        #launchScreen { position: fixed; z-index: 9999; inset: 0; min-height: 100vh; background: #1c2422; }
+    </style>
 
     <link
         rel="stylesheet"
@@ -21,16 +29,24 @@
 <body class="chat-page" data-account-key="{{ username }}">
 
 <div class="launch-screen" id="launchScreen" role="status" aria-label="Ouverture de NathGPT">
+    <div class="launch-aurora launch-aurora-one"></div>
+    <div class="launch-aurora launch-aurora-two"></div>
+    <div class="launch-grid"></div>
     <div class="launch-glow"></div>
+    <div class="launch-rings"><i></i><i></i><i></i></div>
     <span class="launch-star launch-star-one">✦</span>
     <span class="launch-star launch-star-two">✧</span>
     <span class="launch-star launch-star-three">·</span>
-    <div class="launch-logo-shell"><img src="/logo.png" alt=""></div>
+    <div class="launch-logo-shell">
+        <span class="launch-logo-reflection"></span>
+        <img src="/logo.png" alt="">
+    </div>
     <div class="launch-copy">
         <strong>NathGPT</strong>
-        <span>Préparation de ton espace créatif</span>
+        <span id="launchStatus">Préparation de ton espace créatif</span>
     </div>
-    <div class="launch-progress"><i></i></div>
+    <div class="launch-progress"><i><b></b></i></div>
+    <div class="launch-progress-meta"><span>Initialisation</span><em id="launchPercent">0%</em></div>
 </div>
 
 <div class="app">
@@ -751,19 +767,24 @@ async function startDiscordTurn(question, referenceImages = []) {
         finishDiscordTurn();
         hideThinking();
         removeImageGeneration();
-        showErrorMessage(
-            error.message || "Connexion Discord impossible.",
-            () => {
-                currentTurnIsImage = retryIsImage;
-                if (retryIsImage) {
-                    showImageGeneration();
-                }
-                else {
-                    showThinking();
-                }
-                startDiscordTurn(question, referenceImages);
+        const retryTurn = () => {
+            currentTurnIsImage = retryIsImage;
+            if (retryIsImage) {
+                showImageGeneration();
             }
-        );
+            else {
+                showThinking();
+            }
+            startDiscordTurn(question, referenceImages);
+        };
+
+        const message = error.message || "Connexion Discord impossible.";
+        if (/bot Discord.*connexion|connexion du bot|toujours en cours de connexion/i.test(message)) {
+            showBotRestartMessage(retryTurn);
+        }
+        else {
+            showErrorMessage(message, retryTurn);
+        }
         loadConversations();
     }
 }
@@ -1129,6 +1150,64 @@ function showErrorMessage(text, onRetry = null) {
         retry.type = "button";
         retry.className = "chat-error-retry";
         retry.textContent = "↻ Réessayer";
+        retry.addEventListener("click", () => {
+            retry.disabled = true;
+            retry.textContent = "Reconnexion…";
+            card.classList.add("is-retrying");
+            window.setTimeout(() => {
+                card.remove();
+                onRetry();
+            }, 420);
+        });
+        card.appendChild(retry);
+    }
+
+    messages.appendChild(card);
+    scrollToBottom();
+}
+
+
+function showBotRestartMessage(onRetry) {
+
+    const card = document.createElement("section");
+    card.className = "chat-error-card bot-restart-card";
+    card.setAttribute("role", "status");
+    card.innerHTML = `
+        <span class="chat-error-orbit orbit-one"></span>
+        <span class="chat-error-orbit orbit-two"></span>
+        <span class="chat-error-particle particle-one">✦</span>
+        <span class="chat-error-particle particle-two">·</span>
+        <div class="chat-error-icon bot-restart-icon">↻</div>
+        <div class="chat-error-copy">
+            <strong>Notre liaison avec le bot a été refusée.</strong>
+            <p>Réessaie dans quelques secondes.</p>
+            <div class="bot-restart-progress" aria-label="Redémarrage en cours">
+                <span></span><em>Redémarrage en cours 0%</em>
+            </div>
+        </div>
+    `;
+
+    const progressFill = card.querySelector(".bot-restart-progress span");
+    const progressLabel = card.querySelector(".bot-restart-progress em");
+    const startedAt = performance.now();
+
+    const animateProgress = () => {
+        if (!card.isConnected) {
+            return;
+        }
+        const elapsed = performance.now() - startedAt;
+        const percent = Math.min(99, Math.round(100 * (1 - Math.exp(-elapsed / 8500))));
+        progressFill.style.width = `${Math.max(3, percent)}%`;
+        progressLabel.textContent = `Redémarrage en cours ${percent}%`;
+        window.requestAnimationFrame(animateProgress);
+    };
+    window.requestAnimationFrame(animateProgress);
+
+    if (typeof onRetry === "function") {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "chat-error-retry";
+        retry.textContent = "↻ Réessayer maintenant";
         retry.addEventListener("click", () => {
             retry.disabled = true;
             retry.textContent = "Reconnexion…";
@@ -4916,18 +4995,59 @@ if ("serviceWorker" in navigator) {
     });
 }
 
+const launchStartedAt = performance.now();
+let launchProgressFrame = null;
+let launchFinishRequested = false;
+
+function animateLaunchProgress() {
+    const percent = Math.min(
+        94,
+        Math.round(94 * (1 - Math.exp(-(performance.now() - launchStartedAt) / 390)))
+    );
+    const percentLabel = document.getElementById("launchPercent");
+    const statusLabel = document.getElementById("launchStatus");
+    if (percentLabel) {
+        percentLabel.textContent = `${percent}%`;
+    }
+    if (statusLabel && percent >= 70) {
+        statusLabel.textContent = "Synchronisation de ton espace créatif";
+    }
+    if (!launchFinishRequested) {
+        launchProgressFrame = window.requestAnimationFrame(animateLaunchProgress);
+    }
+}
+
 function finishLaunchScreen() {
+    if (launchFinishRequested) {
+        return;
+    }
+    launchFinishRequested = true;
+    if (launchProgressFrame) {
+        window.cancelAnimationFrame(launchProgressFrame);
+    }
+
     const screen = document.getElementById("launchScreen");
     if (!screen) {
         return;
     }
 
+    const percentLabel = document.getElementById("launchPercent");
+    const statusLabel = document.getElementById("launchStatus");
+    if (percentLabel) {
+        percentLabel.textContent = "100%";
+    }
+    if (statusLabel) {
+        statusLabel.textContent = "Tout est prêt";
+    }
+
+    const remainingIntro = Math.max(0, 1180 - (performance.now() - launchStartedAt));
     window.setTimeout(() => {
         screen.classList.add("is-finished");
-        window.setTimeout(() => screen.remove(), 520);
-    }, 780);
+        window.setTimeout(() => screen.remove(), 560);
+    }, remainingIntro);
 }
 
+animateLaunchProgress();
 window.addEventListener("load", finishLaunchScreen, { once: true });
 window.setTimeout(finishLaunchScreen, 3500);
 
