@@ -566,6 +566,18 @@ def get_service_status():
     state = load_json(SERVICE_STATUS_FILE, {})
     if not isinstance(state, dict):
         state = {}
+
+    # Discord limite une catégorie à 50 salons. Dès que le staff en libère un,
+    # la vérification périodique du site réactive NathGPT sans redeploy.
+    if (
+        state.get("outage")
+        and state.get("error_code") == "API-SALONS-PLEINS"
+        and discord_bridge.category_has_capacity()
+    ):
+        state["outage"] = False
+        state["resolved_at"] = utc_now()
+        save_json(SERVICE_STATUS_FILE, state)
+
     return {
         "outage": bool(state.get("outage")),
         "error_code": str(state.get("error_code") or "API-503")[:40],
@@ -609,6 +621,17 @@ def service_outage_response(status_code=503):
         "error": f"NathGPT est hors ligne · erreur {state['error_code']}.",
         "outage": state,
     }), status_code
+
+
+def outage_code_for_error(error):
+    """Ne redémarre pas le bot pour une limite Discord qui n'est pas réseau."""
+    details = str(error or "").casefold()
+    if (
+        "maximum number of channels in category" in details
+        or "maximum number of channels" in details
+    ):
+        return "API-SALONS-PLEINS"
+    return "API-DISCORD"
 
 
 def web_push_is_configured():
@@ -2357,15 +2380,17 @@ def discord_turn():
             str(error)
         )
         return service_outage_response()
-    except Exception:
+    except Exception as error:
         app.logger.exception("Impossible d'envoyer la question à Discord")
-        discord_bridge.request_reconnect("échec d'envoi d'une demande")
-        set_service_outage("API-DISCORD")
+        outage_code = outage_code_for_error(error)
+        if outage_code == "API-DISCORD":
+            discord_bridge.request_reconnect("échec d'envoi d'une demande")
+        set_service_outage(outage_code)
         save_conversation_message(
             username,
             conversation_id,
             "assistant",
-            "Notre liaison avec le bot a été refusée. Redémarrage automatique en cours."
+            "Nous n'avons pas pu envoyer le message à notre API. NathGPT est en cours de mise à jour."
         )
         return service_outage_response()
 
@@ -2401,10 +2426,12 @@ def start_cricut_job():
         discord_bridge.request_reconnect("échec de démarrage Cricut")
         set_service_outage("API-DISCORD")
         return service_outage_response()
-    except Exception:
+    except Exception as error:
         app.logger.exception("Impossible de démarrer la décomposition Cricut")
-        discord_bridge.request_reconnect("échec d'envoi Cricut")
-        set_service_outage("API-DISCORD")
+        outage_code = outage_code_for_error(error)
+        if outage_code == "API-DISCORD":
+            discord_bridge.request_reconnect("échec d'envoi Cricut")
+        set_service_outage(outage_code)
         return service_outage_response()
 
     conversation_id = discord_bridge.job_conversation(job_id, user_key)

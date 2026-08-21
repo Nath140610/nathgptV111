@@ -16,6 +16,7 @@ DEFAULT_CATEGORY_ID = 1539922989200576512
 DEFAULT_TARGET_BOT_ID = 1539359893063209053
 DEFAULT_STAFF_USER_ID = 1362876245381091471
 TEXT_RESPONSE_SETTLE_SECONDS = 1.6
+DISCORD_CATEGORY_CHANNEL_LIMIT = 50
 
 
 def load_local_env(project_dir: Path):
@@ -159,6 +160,35 @@ class DiscordBridge:
 
         if can_send:
             asyncio.run_coroutine_threadsafe(self._flush_staff_notifications(), loop)
+
+    def category_has_capacity(self):
+        """Vérifie la place disponible sans créer ni toucher un salon."""
+        if not self.enabled:
+            return False
+
+        with self._lock:
+            loop = self._loop
+            can_check = bool(self._ready.is_set() and loop and loop.is_running())
+
+        if not can_check:
+            return False
+
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                self._category_has_capacity(),
+                loop,
+            )
+            return bool(future.result(timeout=3))
+        except Exception:
+            return False
+
+    async def _category_has_capacity(self):
+        category = self._client.get_channel(self.category_id)
+        if category is None:
+            category = await self._client.fetch_channel(self.category_id)
+        if not isinstance(category, self._discord.CategoryChannel):
+            return False
+        return len(category.channels) < DISCORD_CATEGORY_CHANNEL_LIMIT
 
     async def _flush_staff_notifications(self):
         with self._lock:
