@@ -131,6 +131,10 @@ TOKENS_FILE = DATA_DIR / "tokens.json"
 
 CONVERSATIONS_FILE = DATA_DIR / "conversations.json"
 
+SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
+
+OUTAGE_STAFF_NOTIFICATION_COOLDOWN_SECONDS = 10 * 60
+
 SECRET_FILE = DATA_DIR / "secret_key.txt"
 
 discord_bridge = DiscordBridge(DATA_DIR)
@@ -558,6 +562,55 @@ def get_reference_images():
     return result
 
 
+def get_service_status():
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+    return {
+        "outage": bool(state.get("outage")),
+        "error_code": str(state.get("error_code") or "API-503")[:40],
+        "started_at": state.get("started_at") or None,
+        "staff_notified_at": state.get("staff_notified_at") or None,
+    }
+
+
+def set_service_outage(error_code="API-503"):
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+    if not state.get("outage"):
+        state["started_at"] = utc_now()
+        state.pop("staff_notified_at", None)
+    state["outage"] = True
+    state["error_code"] = str(error_code or "API-503")[:40]
+    save_json(SERVICE_STATUS_FILE, state)
+    return get_service_status()
+
+
+def clear_service_outage():
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict) or not state.get("outage"):
+        return
+    state["outage"] = False
+    state["resolved_at"] = utc_now()
+    save_json(SERVICE_STATUS_FILE, state)
+
+
+def handle_discord_connection_change(connected):
+    if connected:
+        clear_service_outage()
+    else:
+        set_service_outage("API-DISCORD")
+
+
+def service_outage_response(status_code=503):
+    state = get_service_status()
+    return jsonify({
+        "error": f"NathGPT est hors ligne · erreur {state['error_code']}.",
+        "outage": state,
+    }), status_code
+
+
 def web_push_is_configured():
     """Indique si l'envoi de notifications Web Push est prêt côté serveur."""
     return bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
@@ -666,9 +719,19 @@ def save_discord_result(username, conversation_id, event):
             conversation_id,
         )
 
+    elif event.get("type") == "error":
+        set_service_outage("API-DISCORD")
+        # Une réponse finale en erreur peut venir d'un bot bloqué sans avoir
+        # déclenché l'évènement de déconnexion Discord : on force alors une
+        # connexion neuve pour sortir automatiquement du mode maintenance.
+        discord_bridge.request_reconnect("erreur finale reçue")
+
 
 discord_bridge.set_result_handler(
     save_discord_result
+)
+discord_bridge.set_connection_handler(
+    handle_discord_connection_change
 )
 
 
@@ -1061,6 +1124,7 @@ def render_staff_dashboard(temporary_password=None, temporary_username=None):
         stats=staff_dashboard_stats(accounts),
         active_window_minutes=STAFF_ACTIVE_WINDOW_SECONDS // 60,
         staff_csrf_token=get_staff_csrf_token(),
+        discord_category_id=discord_bridge.category_id,
         temporary_password=temporary_password,
         temporary_username=temporary_username,
     )
@@ -1535,6 +1599,53 @@ def subscribe_to_notifications():
 def health():
 
     return {"status": "ok"}, 200
+
+
+@app.route("/api/service-status")
+def service_status():
+    if not session.get("username"):
+        return jsonify({"error": "Connexion requise."}), 401
+    return jsonify(get_service_status())
+
+
+@app.route("/api/service-outage/notify-staff", methods=["POST"])
+def notify_staff_about_outage():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+
+    state = get_service_status()
+    if not state["outage"]:
+        return jsonify({"error": "NathGPT est de nouveau disponible."}), 409
+
+    now = datetime.now(timezone.utc)
+    previous_notification = state.get("staff_notified_at")
+    if previous_notification:
+        try:
+            previous_time = datetime.fromisoformat(previous_notification)
+            remaining = OUTAGE_STAFF_NOTIFICATION_COOLDOWN_SECONDS - int(
+                (now - previous_time).total_seconds()
+            )
+            if remaining > 0:
+                return jsonify({
+                    "queued": True,
+                    "message": "Le staff a déjà été averti récemment."
+                })
+        except (TypeError, ValueError):
+            pass
+
+    try:
+        discord_bridge.notify_staff_waiting(username)
+    except RuntimeError as error:
+        return jsonify({"error": str(error)}), 503
+
+    saved_state = load_json(SERVICE_STATUS_FILE, {})
+    saved_state["staff_notified_at"] = utc_now()
+    save_json(SERVICE_STATUS_FILE, saved_state)
+    return jsonify({
+        "queued": True,
+        "message": "Le staff a été averti que tu attends."
+    })
 
 
 # ============================================================
@@ -2111,6 +2222,34 @@ def staff_account_action(username, action):
     return "Action staff inconnue.", 404
 
 
+@app.route("/staff/discord/category/delete", methods=["POST"])
+def staff_delete_discord_category_channels():
+    """Supprime tous les salons de la catégorie Discord NathGPT après confirmation."""
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+
+    confirmation = request.form.get("confirm_category_delete", "").strip()
+    if confirmation != "SUPPRIMER TOUS LES SALONS":
+        flash("Écris SUPPRIMER TOUS LES SALONS pour confirmer.", "error")
+        return redirect(url_for("staff_panel"))
+
+    try:
+        deleted_count = discord_bridge.delete_configured_category_channels()
+    except RuntimeError as error:
+        flash(str(error), "error")
+        return redirect(url_for("staff_panel"))
+
+    flash(
+        f"{deleted_count} salon(s) ont été supprimés de la catégorie Discord configurée.",
+        "success",
+    )
+    return redirect(url_for("staff_panel"))
+
+
 # ============================================================
 # RELAIS DISCORD
 # ============================================================
@@ -2125,6 +2264,9 @@ def discord_turn():
 
     if not username:
         return jsonify({"error": "Connexion requise."}), 401
+
+    if get_service_status()["outage"]:
+        return service_outage_response()
 
     payload = request.get_json(silent=True) or request.form
     question = str(payload.get("question", "")).strip()
@@ -2204,22 +2346,28 @@ def discord_turn():
             expects_image=expects_image,
         )
     except RuntimeError as error:
+        # Une connexion incomplète ou une boucle Discord arrêtée doit être
+        # reconstruite sans attendre une action manuelle dans Render.
+        discord_bridge.request_reconnect("échec de démarrage d'une demande")
+        set_service_outage("API-DISCORD")
         save_conversation_message(
             username,
             conversation_id,
             "assistant",
             str(error)
         )
-        return jsonify({"error": str(error)}), 503
+        return service_outage_response()
     except Exception:
         app.logger.exception("Impossible d'envoyer la question à Discord")
+        discord_bridge.request_reconnect("échec d'envoi d'une demande")
+        set_service_outage("API-DISCORD")
         save_conversation_message(
             username,
             conversation_id,
             "assistant",
-            "Impossible d'envoyer la question à Discord."
+            "Notre liaison avec le bot a été refusée. Redémarrage automatique en cours."
         )
-        return jsonify({"error": "Impossible d'envoyer la question à Discord."}), 502
+        return service_outage_response()
 
     return jsonify({"job_id": job_id})
 
@@ -2230,6 +2378,9 @@ def start_cricut_job():
     username = session.get("username")
     if not username:
         return jsonify({"error": "Connexion requise."}), 401
+
+    if get_service_status()["outage"]:
+        return service_outage_response()
 
     users = load_json(USERS_FILE, {})
     user_key = find_user_key(users, username)
@@ -2247,10 +2398,14 @@ def start_cricut_job():
     try:
         job_id = discord_bridge.start_cricut_job(user_key, reference_images[0])
     except RuntimeError as error:
-        return jsonify({"error": str(error)}), 503
+        discord_bridge.request_reconnect("échec de démarrage Cricut")
+        set_service_outage("API-DISCORD")
+        return service_outage_response()
     except Exception:
         app.logger.exception("Impossible de démarrer la décomposition Cricut")
-        return jsonify({"error": "Impossible d'envoyer l'image au bot Discord."}), 502
+        discord_bridge.request_reconnect("échec d'envoi Cricut")
+        set_service_outage("API-DISCORD")
+        return service_outage_response()
 
     conversation_id = discord_bridge.job_conversation(job_id, user_key)
     save_conversation_message(

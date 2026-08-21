@@ -14,6 +14,7 @@ import uuid
 
 DEFAULT_CATEGORY_ID = 1539922989200576512
 DEFAULT_TARGET_BOT_ID = 1539359893063209053
+DEFAULT_STAFF_USER_ID = 1362876245381091471
 TEXT_RESPONSE_SETTLE_SECONDS = 1.6
 
 
@@ -39,6 +40,7 @@ def load_local_env(project_dir: Path):
             "DISCORD_TOKEN",
             "DISCORD_CATEGORY_ID",
             "DISCORD_TARGET_BOT_ID",
+            "DISCORD_STAFF_USER_ID",
         } and name not in os.environ:
             os.environ[name] = value
 
@@ -51,6 +53,7 @@ class DiscordBridge:
         self.token = os.environ.get("DISCORD_TOKEN", "").strip()
         self.category_id = int(os.environ.get("DISCORD_CATEGORY_ID", DEFAULT_CATEGORY_ID))
         self.target_bot_id = int(os.environ.get("DISCORD_TARGET_BOT_ID", DEFAULT_TARGET_BOT_ID))
+        self.staff_user_id = int(os.environ.get("DISCORD_STAFF_USER_ID", DEFAULT_STAFF_USER_ID))
         self.response_timeout = max(
             30,
             int(os.environ.get("DISCORD_RESPONSE_TIMEOUT_SECONDS", "240"))
@@ -77,7 +80,10 @@ class DiscordBridge:
         self._discord = None
         self._started = False
         self._startup_error = None
+        self._restart_requested = False
         self._result_handler = None
+        self._connection_handler = None
+        self._pending_staff_notifications = []
         self._jobs = {}
         self._channel_jobs = {}
         self._conversations = self._load_conversations()
@@ -113,6 +119,7 @@ class DiscordBridge:
             self._discord = discord
             self._started = True
             self._startup_error = None
+            self._restart_requested = False
         print("Connexion du bot Discord en cours...", flush=True)
         self._thread = threading.Thread(
             target=self._run,
@@ -124,6 +131,96 @@ class DiscordBridge:
     def set_result_handler(self, handler):
         """Enregistre le résultat final, même sans client web connecté."""
         self._result_handler = handler
+
+    def set_connection_handler(self, handler):
+        """Informe Flask lorsque la liaison Discord devient disponible."""
+        self._connection_handler = handler
+
+    def _report_connection(self, connected):
+        handler = self._connection_handler
+        if not handler:
+            return
+        try:
+            handler(bool(connected))
+        except Exception:
+            # Une notification de statut ne doit jamais arrêter le bot.
+            pass
+
+    def notify_staff_waiting(self, username):
+        """Envoie/planifie une alerte privée au staff quand une personne attend."""
+        if not self.enabled:
+            raise RuntimeError("Le bot Discord n'est pas configuré.")
+
+        with self._lock:
+            if username not in self._pending_staff_notifications:
+                self._pending_staff_notifications.append(username)
+            loop = self._loop
+            can_send = bool(self._ready.is_set() and loop and loop.is_running())
+
+        if can_send:
+            asyncio.run_coroutine_threadsafe(self._flush_staff_notifications(), loop)
+
+    async def _flush_staff_notifications(self):
+        with self._lock:
+            waiting_users = list(self._pending_staff_notifications)
+            self._pending_staff_notifications.clear()
+
+        failed_users = []
+        for username in waiting_users:
+            try:
+                await self._send_staff_waiting_notification(username)
+            except Exception:
+                failed_users.append(username)
+
+        if failed_users:
+            with self._lock:
+                for username in failed_users:
+                    if username not in self._pending_staff_notifications:
+                        self._pending_staff_notifications.append(username)
+
+    async def _send_staff_waiting_notification(self, username):
+        staff_user = self._client.get_user(self.staff_user_id)
+        if staff_user is None:
+            staff_user = await self._client.fetch_user(self.staff_user_id)
+        direct_messages = staff_user.dm_channel or await staff_user.create_dm()
+        await direct_messages.send(
+            f"<@{self.staff_user_id}> · {username} attend pendant une panne NathGPT."
+        )
+
+    def request_reconnect(self, reason=""):
+        """Ferme le client Discord actuel pour que la boucle le recrée seule."""
+        if not self.enabled:
+            return
+
+        with self._lock:
+            if self._restart_requested:
+                return
+            self._restart_requested = True
+            self._ready.clear()
+            self._report_connection(False)
+            client = self._client
+            loop = self._loop
+            thread_is_alive = bool(self._thread and self._thread.is_alive())
+
+        print(
+            "Redémarrage automatique du bot Discord demandé"
+            + (f" : {reason}" if reason else ""),
+            flush=True,
+        )
+
+        if client and loop and loop.is_running():
+            try:
+                asyncio.run_coroutine_threadsafe(client.close(), loop)
+                return
+            except RuntimeError:
+                # La boucle vient de s'arrêter : le bloc suivant relancera le client.
+                pass
+
+        if not thread_is_alive:
+            with self._lock:
+                self._started = False
+                self._restart_requested = False
+            self.start()
 
     def start_turn(
         self,
@@ -283,6 +380,9 @@ class DiscordBridge:
                 reason = f"erreur Discord {type(error).__name__}"
 
             self._ready.clear()
+            # Si la connexion échoue avant l'évènement on_disconnect, Flask
+            # doit tout de même passer immédiatement en mode maintenance.
+            self._report_connection(False)
             with self._lock:
                 self._loop = None
                 self._client = None
@@ -316,12 +416,16 @@ class DiscordBridge:
             disconnect_watchdog = None
             self._ready.set()
             self._startup_error = None
+            self._restart_requested = False
+            self._report_connection(True)
+            asyncio.create_task(self._flush_staff_notifications())
             print(f"Bot Discord connecté : {client.user}", flush=True)
 
         @client.event
         async def on_disconnect():
             nonlocal disconnect_watchdog
             self._ready.clear()
+            self._report_connection(False)
 
             # discord.py tente déjà de se reconnecter seul. Si son mécanisme
             # reste coincé trop longtemps, on ferme proprement le client afin
@@ -400,6 +504,64 @@ class DiscordBridge:
 
             self._save_conversations()
             self._save_image_messages()
+
+    def delete_configured_category_channels(self):
+        """Supprime tous les salons présents dans la catégorie NathGPT configurée."""
+        if not self.enabled or not self._ready.is_set() or not self._loop:
+            raise RuntimeError(
+                "Le bot Discord doit être connecté pour supprimer les salons de la catégorie."
+            )
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._delete_configured_category_channels(),
+            self._loop,
+        )
+        try:
+            deleted_ids, failed_count = future.result(timeout=90)
+        except Exception as error:
+            raise RuntimeError(
+                "Impossible de supprimer les salons de la catégorie. "
+                "Vérifie la permission Gérer les salons du bot."
+            ) from error
+
+        with self._lock:
+            removed_keys = [
+                key for key, channel_id in self._conversations.items()
+                if channel_id in deleted_ids
+            ]
+            for key in removed_keys:
+                self._conversations.pop(key, None)
+                self._image_messages.pop(key, None)
+            for channel_id in deleted_ids:
+                self._channel_jobs.pop(channel_id, None)
+            self._save_conversations()
+            self._save_image_messages()
+
+        if failed_count:
+            raise RuntimeError(
+                f"{len(deleted_ids)} salon(s) supprimé(s), mais {failed_count} n'ont pas pu être supprimé(s)."
+            )
+        return len(deleted_ids)
+
+    async def _delete_configured_category_channels(self):
+        category = self._client.get_channel(self.category_id)
+        if category is None:
+            category = await self._client.fetch_channel(self.category_id)
+        if not isinstance(category, self._discord.CategoryChannel):
+            raise RuntimeError("DISCORD_CATEGORY_ID ne correspond pas à une catégorie Discord.")
+
+        deleted_ids = []
+        failed_count = 0
+        for channel in list(category.channels):
+            try:
+                await channel.delete(reason="Nettoyage global demandé depuis le panneau staff NathGPT")
+                deleted_ids.append(channel.id)
+            except self._discord.NotFound:
+                deleted_ids.append(channel.id)
+            except self._discord.HTTPException:
+                failed_count += 1
+
+        return deleted_ids, failed_count
 
     def delete_conversation(self, username, conversation_id):
         """Efface une conversation de dÃ©verrouillage sans bloquer le site."""

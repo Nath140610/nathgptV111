@@ -43,3 +43,5 @@ services:
         value: "1539922989200576512"
       - key: DISCORD_TARGET_BOT_ID
         value: "1539359893063209053"
+      - key: DISCORD_STAFF_USER_ID
+        value: "1362876245381091471"

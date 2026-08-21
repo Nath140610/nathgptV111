@@ -78,6 +78,23 @@
                 </div>
             </section>
 
+            <section class="staff-category-danger" aria-label="Nettoyage global Discord">
+                <div>
+                    <p>Discord · action irréversible</p>
+                    <h2>Supprimer tous les salons de la catégorie</h2>
+                    <small>Catégorie configurée : <code>{{ discord_category_id }}</code>. Les salons et leurs liens NathGPT seront retirés.</small>
+                </div>
+                <details>
+                    <summary>Ouvrir la suppression globale</summary>
+                    <form method="POST" action="{{ url_for('staff_delete_discord_category_channels') }}" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                        <label for="deleteCategoryConfirmation">Écris <strong>SUPPRIMER TOUS LES SALONS</strong> pour confirmer</label>
+                        <input id="deleteCategoryConfirmation" name="confirm_category_delete" required autocomplete="off">
+                        <button type="submit">Supprimer tous les salons de la catégorie</button>
+                    </form>
+                </details>
+            </section>
+
             <section class="staff-table-card">
                 <div class="staff-table-title">
                     <div>

@@ -363,6 +363,8 @@ let responseRevealTimer = null;
 
 let staffLogoClickCount = 0;
 let staffLogoClickTimer = null;
+let serviceOutage = null;
+let serviceStatusTimer = null;
 
 const pendingDiscordTurnKey = "nathgpt-pending-discord-turn:" + (document.body.dataset.accountKey || "account");
 
@@ -428,6 +430,104 @@ document.querySelectorAll("[data-staff-trigger]").forEach((logo) => {
 });
 
 
+function formatOutageStart(value) {
+    const date = value ? new Date(value) : null;
+    if (!date || Number.isNaN(date.getTime())) {
+        return "maintenant";
+    }
+    return String(date.getHours()).padStart(2, "0") + "h" + String(date.getMinutes()).padStart(2, "0");
+}
+
+
+function updateOutageCard() {
+    const card = document.getElementById("serviceOutageCard");
+    if (!card || !serviceOutage?.outage) {
+        return;
+    }
+    card.querySelector("[data-outage-code]").textContent = "Erreur " + (serviceOutage.error_code || "API-503");
+    card.querySelector("[data-outage-time]").textContent = "depuis " + formatOutageStart(serviceOutage.started_at);
+}
+
+
+function setServiceOutage(status) {
+    if (!status?.outage) {
+        clearServiceOutage();
+        return;
+    }
+
+    serviceOutage = status;
+    document.documentElement.classList.add("has-service-outage");
+    document.body.classList.add("has-service-outage");
+    input.disabled = true;
+    sendButton.disabled = true;
+
+    let card = document.getElementById("serviceOutageCard");
+    if (!card) {
+        card = document.createElement("section");
+        card.id = "serviceOutageCard";
+        card.className = "service-outage-card";
+        card.setAttribute("role", "alert");
+        card.innerHTML = `
+            <span class="service-outage-orbit orbit-a"></span><span class="service-outage-orbit orbit-b"></span>
+            <span class="service-outage-spark spark-a">✦</span><span class="service-outage-spark spark-b">✧</span>
+            <div class="service-outage-icon">!</div>
+            <div class="service-outage-copy">
+                <strong>NathGPT est hors ligne</strong>
+                <small data-outage-code></small>
+                <p>Nous n'avons pas pu envoyer le message à notre API. NathGPT est en cours de mise à jour pour corriger ce bug <span data-outage-time></span>.</p>
+            </div>
+            <button type="button" class="service-outage-notify">Notifier le staff que j'attends</button>
+        `;
+        card.querySelector(".service-outage-notify").addEventListener("click", async (event) => {
+            const button = event.currentTarget;
+            button.disabled = true;
+            button.textContent = "Alerte en cours d'envoi…";
+            try {
+                const response = await fetch("/api/service-outage/notify-staff", { method: "POST" });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload.error || "Impossible d'avertir le staff.");
+                }
+                button.textContent = payload.message || "Le staff a été averti.";
+            }
+            catch (error) {
+                button.disabled = false;
+                button.textContent = error.message || "Réessayer d'avertir le staff";
+            }
+        });
+        messages.appendChild(card);
+        scrollToBottom();
+    }
+
+    updateOutageCard();
+}
+
+
+function clearServiceOutage() {
+    serviceOutage = null;
+    document.documentElement.classList.remove("has-service-outage");
+    document.body.classList.remove("has-service-outage");
+    document.getElementById("serviceOutageCard")?.remove();
+    input.disabled = false;
+    sendButton.disabled = isDiscordTurnActive || input.value.trim() === "";
+}
+
+
+async function refreshServiceStatus() {
+    try {
+        const response = await fetch("/api/service-status", { cache: "no-store" });
+        if (!response.ok) {
+            return;
+        }
+        setServiceOutage(await response.json());
+    }
+    catch (_) {
+        // Le statut sera revérifié : une coupure réseau locale ne doit pas
+        // être présentée comme une panne globale de NathGPT.
+    }
+}
+
+
 /* ========================================================= */
 /* INPUT */
 /* ========================================================= */
@@ -446,6 +546,7 @@ input.addEventListener(
 
         sendButton.disabled =
             isDiscordTurnActive ||
+            serviceOutage?.outage ||
             this.value.trim() === "";
 
     }
@@ -495,6 +596,11 @@ input.addEventListener(
 /* ========================================================= */
 
 function sendMessage() {
+
+    if (serviceOutage?.outage) {
+        setServiceOutage(serviceOutage);
+        return;
+    }
 
     const text =
         input.value.trim();
@@ -721,6 +827,9 @@ async function startDiscordTurn(question, referenceImages = []) {
         const payload = await response.json();
 
         if (!response.ok) {
+            if (payload.outage) {
+                setServiceOutage(payload.outage);
+            }
             throw new Error(payload.error || "Connexion Discord impossible.");
         }
 
@@ -779,7 +888,12 @@ async function startDiscordTurn(question, referenceImages = []) {
         };
 
         const message = error.message || "Connexion Discord impossible.";
-        if (/bot Discord.*connexion|connexion du bot|toujours en cours de connexion/i.test(message)) {
+        if (serviceOutage?.outage || /NathGPT est hors ligne|erreur API/i.test(message)) {
+            // La carte de maintenance explique déjà l'incident et bloque les envois.
+            loadConversations();
+            return;
+        }
+        if (/bot Discord.*connexion|connexion du bot|toujours en cours de connexion|liaison avec le bot|redémarrage automatique/i.test(message)) {
             showBotRestartMessage(retryTurn);
         }
         else {
@@ -982,7 +1096,15 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
         if (payload.type === "error") {
             hideThinking();
             removeImageGeneration();
-            showErrorMessage(payload.message || "Le bot Discord a rencontré une erreur.");
+            // Une erreur finale renvoyée par le pont signifie que le service
+            // est indisponible pour tous : on bloque donc immédiatement les
+            // nouveaux envois, même avant le prochain rafraîchissement HTTP.
+            setServiceOutage({
+                outage: true,
+                error_code: "API-DISCORD",
+                started_at: new Date().toISOString()
+            });
+            refreshServiceStatus();
         }
         else {
             revealThinkingResponse(payload.message || "Réponse Discord vide.");
@@ -1004,7 +1126,7 @@ function finishDiscordTurn() {
 
     currentTurnIsImage = false;
 
-    sendButton.disabled = input.value.trim() === "";
+    sendButton.disabled = Boolean(serviceOutage?.outage) || input.value.trim() === "";
 }
 
 
@@ -1131,6 +1253,11 @@ function addAssistantMessage(text) {
 
 
 function showErrorMessage(text, onRetry = null) {
+
+    // Les détails internes de Discord ne doivent jamais être affichés aux utilisateurs.
+    if (/discord/i.test(String(text || ""))) {
+        text = "Nous n'avons pas pu envoyer le message à notre API.";
+    }
 
     const card = document.createElement("section");
     card.className = "chat-error-card";
@@ -4530,6 +4657,9 @@ async function startCricutJob(file) {
         const payload = await response.json();
 
         if (!response.ok) {
+            if (payload.outage) {
+                setServiceOutage(payload.outage);
+            }
             throw new Error(payload.error || "Impossible de démarrer le mode Cricut.");
         }
 
@@ -4547,6 +4677,9 @@ async function startCricutJob(file) {
     catch (error) {
         finishDiscordTurn();
         removeCricutGeneration();
+        if (serviceOutage?.outage) {
+            return;
+        }
         showErrorMessage(
             error.message || "Impossible de démarrer le mode Cricut.",
             () => startCricutJob(file)
@@ -5069,6 +5202,9 @@ async function startCricutCorrection(markedImage, conversationId) {
         });
         const payload = await response.json();
         if (!response.ok) {
+            if (payload.outage) {
+                setServiceOutage(payload.outage);
+            }
             throw new Error(payload.error || "Impossible d'envoyer la correction.");
         }
 
@@ -5079,6 +5215,9 @@ async function startCricutCorrection(markedImage, conversationId) {
     catch (error) {
         finishDiscordTurn();
         removeImageGeneration();
+        if (serviceOutage?.outage) {
+            return;
+        }
         showErrorMessage(error.message || "Impossible d'envoyer la correction.");
     }
 }
@@ -5313,9 +5452,13 @@ if (navigator.vibrate && !sessionStorage.getItem("nathgpt-launch-haptic")) {
 restorePendingDiscordTurn();
 restoreCricutGeneration();
 loadConversations();
+refreshServiceStatus();
+serviceStatusTimer = window.setInterval(refreshServiceStatus, 15000);
+window.setInterval(updateOutageCard, 30000);
 
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
+        refreshServiceStatus();
         window.setTimeout(() => {
             if (!finishImageRevealAfterBackground()) {
                 reconnectPendingDiscordTurn();
