@@ -38,15 +38,24 @@
     <span class="launch-star launch-star-one">✦</span>
     <span class="launch-star launch-star-two">✧</span>
     <span class="launch-star launch-star-three">·</span>
-    <div class="launch-logo-shell">
-        <span class="launch-logo-reflection"></span>
-        <img src="/logo.png" alt="">
+    <div class="launch-logo-stage">
+        <div class="launch-logo-shell">
+            <span class="launch-logo-reflection"></span>
+            <img src="/logo.png" alt="">
+        </div>
     </div>
     <div class="launch-copy">
         <strong>NathGPT</strong>
         <span id="launchStatus">Préparation de ton espace créatif</span>
     </div>
-    <div class="launch-progress"><i><b></b></i></div>
+    <div
+        class="launch-progress"
+        role="progressbar"
+        aria-label="Chargement de NathGPT"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow="0"
+    ><i><b></b></i></div>
     <div class="launch-progress-meta"><span>Initialisation</span><em id="launchPercent">0%</em></div>
 </div>
 
@@ -5559,8 +5568,13 @@ function animateLaunchProgress() {
     );
     const percentLabel = document.getElementById("launchPercent");
     const statusLabel = document.getElementById("launchStatus");
+    const progressBar = document.querySelector(".launch-progress");
     if (percentLabel) {
         percentLabel.textContent = `${percent}%`;
+    }
+    if (progressBar) {
+        progressBar.style.setProperty("--launch-progress", `${percent}%`);
+        progressBar.setAttribute("aria-valuenow", String(percent));
     }
     if (statusLabel && percent >= 70) {
         statusLabel.textContent = "Synchronisation de ton espace créatif";
@@ -5586,14 +5600,19 @@ function finishLaunchScreen() {
 
     const percentLabel = document.getElementById("launchPercent");
     const statusLabel = document.getElementById("launchStatus");
+    const progressBar = screen.querySelector(".launch-progress");
     if (percentLabel) {
         percentLabel.textContent = "100%";
+    }
+    if (progressBar) {
+        progressBar.style.setProperty("--launch-progress", "100%");
+        progressBar.setAttribute("aria-valuenow", "100");
     }
     if (statusLabel) {
         statusLabel.textContent = "Tout est prêt";
     }
 
-    const remainingIntro = Math.max(0, 1180 - (performance.now() - launchStartedAt));
+    const remainingIntro = Math.max(170, 1180 - (performance.now() - launchStartedAt));
     window.setTimeout(() => {
         screen.classList.add("is-finished");
         window.setTimeout(() => screen.remove(), 560);

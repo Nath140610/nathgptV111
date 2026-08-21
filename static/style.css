@@ -169,18 +169,19 @@ textarea {
     isolation: isolate;
 }
 
-.launch-screen.is-finished { opacity: 0; visibility: hidden; pointer-events: none; }
+.launch-screen.is-finished { opacity: 0; visibility: hidden; pointer-events: none; transform: scale(1.018); }
 .launch-screen::before { content: ""; position: absolute; z-index: -2; inset: 0; opacity: .34; background-image: linear-gradient(rgba(159,255,207,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(159,255,207,.06) 1px, transparent 1px); background-size: 30px 30px; -webkit-mask-image: radial-gradient(circle at center, black, transparent 68%); mask-image: radial-gradient(circle at center, black, transparent 68%); }
 .launch-glow { position: absolute; z-index: -1; width: min(94vw, 470px); aspect-ratio: 1; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0 12%, rgba(100,255,183,.24) 19%, transparent 27% 50%, rgba(132,156,255,.20) 59%, transparent 69%); filter: blur(9px); animation: launch-glow-spin 5.6s linear infinite; }
-.launch-logo-shell { position: relative; display: grid; width: 108px; height: 108px; overflow: visible; place-items: center; border: 1px solid rgba(224,255,237,.47); border-radius: 34px; background: linear-gradient(145deg, rgba(255,255,255,.21), rgba(91,238,159,.14) 45%, rgba(80,112,174,.19)); box-shadow: inset 0 1px rgba(255,255,255,.42), 0 0 0 10px rgba(104,255,181,.07), 0 0 40px rgba(81,246,167,.20), 0 28px 55px rgba(0,0,0,.32); animation: launch-logo-in .76s cubic-bezier(.17,1.3,.28,1) both, launch-logo-float 2.7s 1s ease-in-out infinite; }
-.launch-logo-shell::before { content: ""; position: absolute; inset: -11px; border: 2px solid transparent; border-top-color: rgba(170,255,213,.9); border-right-color: rgba(139,187,255,.52); border-radius: 41px; filter: drop-shadow(0 0 8px rgba(108,255,186,.52)); animation: launch-orbit 1.65s linear infinite; }
+.launch-logo-stage { position: relative; animation: launch-logo-in .76s cubic-bezier(.17,1.3,.28,1) both, launch-logo-float 3.4s 1s ease-in-out infinite; will-change: transform, opacity; }
+.launch-logo-shell { position: relative; display: grid; width: 108px; height: 108px; overflow: visible; place-items: center; border: 1px solid rgba(224,255,237,.47); border-radius: 50%; background: linear-gradient(145deg, rgba(255,255,255,.21), rgba(91,238,159,.14) 45%, rgba(80,112,174,.19)); box-shadow: inset 0 1px rgba(255,255,255,.42), 0 0 0 10px rgba(104,255,181,.07), 0 0 40px rgba(81,246,167,.20), 0 28px 55px rgba(0,0,0,.32); }
+.launch-logo-shell::before { content: ""; position: absolute; inset: -11px; border: 2px solid transparent; border-top-color: rgba(170,255,213,.9); border-right-color: rgba(139,187,255,.52); border-radius: 50%; filter: drop-shadow(0 0 8px rgba(108,255,186,.52)); animation: launch-orbit 1.65s linear infinite; }
 .launch-logo-shell::after { content: ""; position: absolute; width: 5px; height: 5px; top: -14px; right: 22px; border-radius: 50%; background: #d8ffed; box-shadow: 0 0 13px 4px rgba(124,255,194,.66); animation: launch-orbit-dot 1.65s linear infinite; }
 .launch-logo-shell img { width: 82px; height: 82px; object-fit: contain; border-radius: 25px; filter: drop-shadow(0 8px 13px rgba(0,0,0,.18)); }
 .launch-copy { display: grid; gap: 5px; margin-top: 4px; text-align: center; animation: launch-copy-in .65s .13s ease both; }
 .launch-copy strong { font-size: 27px; letter-spacing: -.052em; text-shadow: 0 3px 16px rgba(0,0,0,.24); }
 .launch-copy span { color: #c5d4cb; font-size: 12px; letter-spacing: .015em; }
 .launch-progress { position: relative; width: min(228px, 70vw); height: 7px; margin-top: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.10); border-radius: 99px; background: rgba(255,255,255,.065); box-shadow: inset 0 2px 4px rgba(0,0,0,.28), 0 8px 20px rgba(0,0,0,.12); }
-.launch-progress i { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #31bf78, #bfffe3 48%, #64bce9); box-shadow: 0 0 16px rgba(106,255,185,.82); animation: launch-progress 1.5s cubic-bezier(.2,.8,.3,1) infinite; }
+.launch-progress i { display: block; width: var(--launch-progress, 0%); height: 100%; border-radius: inherit; background: linear-gradient(90deg, #31bf78, #bfffe3 48%, #64bce9); box-shadow: 0 0 16px rgba(106,255,185,.82); transition: width .18s cubic-bezier(.2,.85,.3,1); }
 .launch-progress::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 28%, rgba(255,255,255,.38), transparent 52%); transform: translateX(-130%); animation: launch-progress-shine 1.5s ease-in-out infinite; }
 .launch-star { position: absolute; color: #d9ffea; text-shadow: 0 0 18px rgba(104,255,185,.9); animation: launch-star 2.2s ease-in-out infinite; }
 .launch-star-one { top: 26%; left: 28%; font-size: 25px; }
@@ -197,28 +198,27 @@ textarea {
 @keyframes launch-star { 0%,100% { opacity: .24; transform: scale(.72) rotate(0); } 50% { opacity: 1; transform: scale(1.28) rotate(17deg); } }
 
 /* Écran de lancement : rendu prévisible dans une PWA iOS et animation légère. */
-.launch-screen { z-index: 9999; min-height: 100svh; gap: 13px; padding: max(30px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(30px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: radial-gradient(circle at 50% 43%, rgba(104,255,190,.17), transparent 21%), radial-gradient(circle at 17% 88%, rgba(95,134,255,.16), transparent 42%), radial-gradient(circle at 87% 14%, rgba(70,214,172,.13), transparent 36%), #1c2422; transition: opacity .48s cubic-bezier(.2,.8,.2,1), visibility 0s linear .48s, filter .48s ease; -webkit-transform: translateZ(0); transform: translateZ(0); }
+.launch-screen { z-index: 9999; min-height: 100svh; gap: 13px; padding: max(30px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(30px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left)); background: radial-gradient(circle at 50% 43%, rgba(104,255,190,.17), transparent 21%), radial-gradient(circle at 17% 88%, rgba(95,134,255,.16), transparent 42%), radial-gradient(circle at 87% 14%, rgba(70,214,172,.13), transparent 36%), #1c2422; transition: opacity .48s cubic-bezier(.2,.8,.2,1), transform .48s cubic-bezier(.2,.8,.2,1), visibility 0s linear .48s, filter .48s ease; -webkit-transform: translateZ(0); transform: translateZ(0); }
 .launch-screen.is-finished { filter: blur(6px); }
 .launch-grid { position: absolute; z-index: -2; inset: -20%; opacity: .22; background-image: linear-gradient(rgba(168,255,216,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(168,255,216,.07) 1px, transparent 1px); background-size: 34px 34px; -webkit-mask-image: radial-gradient(ellipse at center, #000 8%, transparent 66%); mask-image: radial-gradient(ellipse at center, #000 8%, transparent 66%); transform: perspective(540px) rotateX(55deg) translateY(26%); transform-origin: center bottom; }
 .launch-aurora { position: absolute; z-index: -1; width: min(120vw, 670px); aspect-ratio: 1.75; border-radius: 50%; filter: blur(34px); opacity: .55; will-change: transform; }
 .launch-aurora-one { top: 12%; left: -30%; background: rgba(67,215,160,.20); animation: launch-aurora-one 6s ease-in-out infinite alternate; }
 .launch-aurora-two { right: -34%; bottom: 11%; background: rgba(102,128,255,.20); animation: launch-aurora-two 7s ease-in-out infinite alternate; }
-.launch-rings { position: absolute; z-index: -1; width: min(72vw, 330px); aspect-ratio: 1; }
+.launch-rings { position: absolute; z-index: -1; width: min(72vw, 330px); aspect-ratio: 1; border-radius: 50%; }
 .launch-rings i { position: absolute; inset: 0; border: 1px solid rgba(190,255,223,.13); border-radius: 50%; animation: launch-ring 3.3s cubic-bezier(.12,.7,.22,1) infinite; }
 .launch-rings i:nth-child(2) { animation-delay: 1.1s; }
 .launch-rings i:nth-child(3) { animation-delay: 2.2s; }
-.launch-logo-shell { width: 114px; height: 114px; border-color: rgba(224,255,237,.56); border-radius: 36px; box-shadow: inset 0 1px rgba(255,255,255,.52), 0 0 0 10px rgba(104,255,181,.07), 0 0 54px rgba(81,246,167,.24), 0 30px 62px rgba(0,0,0,.36); -webkit-transform: translateZ(0); }
+.launch-logo-shell { width: 114px; height: 114px; border-color: rgba(224,255,237,.56); border-radius: 50%; box-shadow: inset 0 1px rgba(255,255,255,.52), 0 0 0 10px rgba(104,255,181,.07), 0 0 54px rgba(81,246,167,.24), 0 30px 62px rgba(0,0,0,.36); -webkit-transform: translateZ(0); }
 .launch-logo-shell img { position: relative; z-index: 1; width: 86px; height: 86px; border-radius: 27px; }
 .launch-logo-reflection { position: absolute; z-index: 2; top: 8px; left: 13px; width: 45%; height: 23%; border-radius: 50%; pointer-events: none; background: linear-gradient(145deg, rgba(255,255,255,.56), rgba(255,255,255,0)); filter: blur(2px); transform: rotate(-19deg); }
 .launch-copy { gap: 6px; margin-top: 6px; }
 .launch-copy strong { font-size: 29px; letter-spacing: -.058em; }
 .launch-copy span { color: #c8dcd1; }
 .launch-progress { width: min(244px, 72vw); height: 8px; margin-top: 8px; border-color: rgba(222,255,237,.16); background: rgba(255,255,255,.07); }
-.launch-progress i { width: 0; animation: launch-progress-fill 1.05s .12s cubic-bezier(.18,.82,.22,1) forwards; }
+.launch-progress i { width: var(--launch-progress, 0%); }
 .launch-progress i b { display: block; width: 35%; height: 100%; border-radius: inherit; background: rgba(255,255,255,.64); filter: blur(4px); animation: launch-progress-sheen 1.05s .22s ease-in-out forwards; }
 .launch-progress-meta { display: flex; width: min(244px, 72vw); justify-content: space-between; color: rgba(210,231,220,.68); font-size: 10px; letter-spacing: .04em; text-transform: uppercase; }
 .launch-progress-meta em { font-style: normal; font-variant-numeric: tabular-nums; }
-@keyframes launch-progress-fill { 0% { width: 0; } 70% { width: 86%; } 100% { width: 100%; } }
 @keyframes launch-progress-sheen { from { transform: translateX(-180%); } to { transform: translateX(420%); } }
 @keyframes launch-ring { 0% { opacity: .9; transform: scale(.26); } 75%,100% { opacity: 0; transform: scale(1.25); } }
 @keyframes launch-aurora-one { to { transform: translate3d(24%, -10%, 0) rotate(12deg); } }
