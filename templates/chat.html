@@ -1531,7 +1531,7 @@ async function openConversation(conversationId) {
 
             else if (Array.isArray(item.cricut_images)) {
                 addAssistantMessage(item.content || "Stickers Cricut terminés.");
-                addSavedCricutResult(item.cricut_images);
+                addSavedCricutResult(item.cricut_images, savedConversation.id);
             }
 
             else if (item.image_url) {
@@ -1585,7 +1585,7 @@ function addSavedImage(imageUrl) {
 }
 
 
-function addSavedCricutResult(images) {
+function addSavedCricutResult(images, conversationId = "") {
 
     const card = document.createElement("section");
     card.className = "cricut-generation cricut-saved-generation is-complete";
@@ -1597,7 +1597,7 @@ function addSavedCricutResult(images) {
 
     const results = document.createElement("div");
     results.className = "cricut-results";
-    appendCricutResultGallery(results, images);
+    appendCricutResultGallery(results, images, conversationId);
     card.appendChild(results);
     messages.appendChild(card);
 }
@@ -4366,6 +4366,7 @@ function stopConstellationAnimation() {
 
 let cricutState = {
     jobId: "",
+    conversationId: "",
     total: 0,
     current: 0,
     remaining: "",
@@ -4399,6 +4400,7 @@ function persistCricutRecovery() {
     try {
         localStorage.setItem(cricutRecoveryKey, JSON.stringify({
             jobId: cricutState.jobId,
+            conversationId: cricutState.conversationId,
             total: cricutState.total,
             current: cricutState.current,
             remaining: cricutState.remaining,
@@ -4532,6 +4534,7 @@ async function startCricutJob(file) {
         }
 
         cricutState.jobId = payload.job_id;
+        cricutState.conversationId = payload.conversation_id || currentConversationId;
         persistCricutRecovery();
         saveCricutReference(payload.job_id, file);
         if (payload.conversation_id) {
@@ -4558,6 +4561,7 @@ function showCricutGeneration(file, savedState = null) {
 
     cricutState = {
         jobId: savedState?.jobId || "",
+        conversationId: savedState?.conversationId || currentConversationId,
         total: Number(savedState?.total) || 0,
         current: Number(savedState?.current) || 0,
         remaining: savedState?.remaining || "",
@@ -4590,7 +4594,8 @@ function showCricutGeneration(file, savedState = null) {
     const preview = card.querySelector(".cricut-source-image");
     if (cricutState.imageUrl) {
         preview.src = cricutState.imageUrl;
-        preview.onload = () => URL.revokeObjectURL(cricutState.imageUrl);
+        // L'URL reste disponible afin que « Corriger un sticker » puisse
+        // redessiner l'image de départ dans son canevas.
     }
     else {
         preview.alt = "Image de référence restaurée";
@@ -4773,12 +4778,16 @@ function completeCricutGeneration(images) {
         return;
     }
 
-    appendCricutResultGallery(results, images);
+    appendCricutResultGallery(
+        results,
+        images,
+        cricutState.conversationId || currentConversationId
+    );
     scrollToBottom();
 }
 
 
-function appendCricutResultGallery(results, images) {
+function appendCricutResultGallery(results, images, conversationId = "") {
 
     results.innerHTML = "";
 
@@ -4790,12 +4799,27 @@ function appendCricutResultGallery(results, images) {
         return;
     }
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "cricut-download-all";
-    button.textContent = "↓ Télécharger tous les stickers";
-    button.addEventListener("click", () => downloadAllCricutImages(images));
-    results.appendChild(button);
+    const actions = document.createElement("div");
+    actions.className = "cricut-result-actions";
+
+    const downloadButton = document.createElement("button");
+    downloadButton.type = "button";
+    downloadButton.className = "cricut-download-all";
+    downloadButton.textContent = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        ? "⇧ Partager / enregistrer les stickers"
+        : "↓ Télécharger tous les stickers";
+    downloadButton.addEventListener("click", () => downloadAllCricutImages(images, downloadButton));
+
+    const correctButton = document.createElement("button");
+    correctButton.type = "button";
+    correctButton.className = "cricut-correct-button";
+    correctButton.textContent = "◯ Corriger un sticker";
+    correctButton.addEventListener("click", () => openCricutCorrection(
+        conversationId || cricutState.conversationId || currentConversationId
+    ));
+
+    actions.append(downloadButton, correctButton);
+    results.appendChild(actions);
 
     const gallery = document.createElement("div");
     gallery.className = "cricut-result-gallery";
@@ -4814,6 +4838,249 @@ function appendCricutResultGallery(results, images) {
         gallery.appendChild(link);
     });
     results.appendChild(gallery);
+}
+
+
+async function downloadAllCricutImages(images, button = null) {
+
+    const originalText = button?.textContent;
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Préparation des images…";
+    }
+
+    try {
+        // Safari iPhone ne permet pas à un site d'écrire silencieusement dans
+        // Photos. La feuille de partage native est le chemin sûr qui permet
+        // à la personne de choisir « Enregistrer les images » / Photos.
+        if (navigator.share && navigator.canShare && window.File) {
+            const files = await Promise.all(images.map(async (url, index) => {
+                const response = await fetch(url, { mode: "cors" });
+                if (!response.ok) {
+                    throw new Error("Image indisponible");
+                }
+                const blob = await response.blob();
+                return new File([blob], `nathgpt-sticker-${index + 1}.png`, {
+                    type: blob.type || "image/png"
+                });
+            }));
+
+            if (navigator.canShare({ files })) {
+                await navigator.share({
+                    title: "Stickers NathGPT",
+                    text: "Enregistre les stickers dans Photos ou Fichiers.",
+                    files
+                });
+                return;
+            }
+        }
+    }
+    catch (_) {
+        // Le téléchargement classique ci-dessous reste disponible si Safari
+        // refuse le partage de plusieurs fichiers ou si Discord bloque CORS.
+    }
+    finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = originalText;
+        }
+    }
+
+    images.forEach((url, index) => {
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `nathgpt-sticker-${index + 1}.png`;
+        link.target = "_blank";
+        link.rel = "noopener";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+    });
+}
+
+
+async function openCricutCorrection(conversationId) {
+
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+    const existing = document.getElementById("cricutCorrection");
+    if (existing) {
+        existing.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+    }
+
+    cricutState.conversationId = conversationId || cricutState.conversationId || currentConversationId;
+    let sourceUrl = document.querySelector("#cricutGeneration .cricut-source-image")?.src || "";
+    let temporaryUrl = "";
+
+    if (!sourceUrl || sourceUrl.startsWith("data:")) {
+        const savedFile = await getCricutReference(cricutState.jobId);
+        if (savedFile) {
+            temporaryUrl = URL.createObjectURL(savedFile);
+            sourceUrl = temporaryUrl;
+        }
+    }
+
+    if (!sourceUrl) {
+        showErrorMessage("L'image de départ n'est plus disponible sur cet appareil. Relance l'adaptation Cricut pour la corriger.");
+        return;
+    }
+
+    const editor = document.createElement("section");
+    editor.id = "cricutCorrection";
+    editor.className = "cricut-correction-card";
+    editor.innerHTML = `
+        <div class="cricut-correction-heading"><span>✦</span><div><strong>Corriger un sticker</strong><small>Entoure précisément le sticker à régénérer.</small></div></div>
+        <div class="cricut-draw-wrap"><canvas aria-label="Dessine un cercle autour du sticker"></canvas><span class="cricut-draw-hint">Dessine un cercle rouge autour du sticker</span></div>
+        <div class="cricut-correction-actions"><button type="button" class="cricut-clear-mark">Effacer</button><button type="button" class="cricut-submit-correction">Générer la correction</button></div>
+    `;
+    messages.appendChild(editor);
+    scrollToBottom();
+
+    const canvas = editor.querySelector("canvas");
+    const context = canvas.getContext("2d");
+    const clearButton = editor.querySelector(".cricut-clear-mark");
+    const submitButton = editor.querySelector(".cricut-submit-correction");
+    const image = new Image();
+    let isDrawing = false;
+    let lastPoint = null;
+    let hasMark = false;
+
+    const pointForEvent = (event) => {
+        const bounds = canvas.getBoundingClientRect();
+        return {
+            x: (event.clientX - bounds.left) * canvas.width / bounds.width,
+            y: (event.clientY - bounds.top) * canvas.height / bounds.height
+        };
+    };
+
+    const redraw = () => {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    };
+
+    image.onload = () => {
+        const scale = Math.min(1, 1180 / Math.max(image.naturalWidth, image.naturalHeight));
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+        redraw();
+    };
+    image.onerror = () => {
+        editor.remove();
+        showErrorMessage("Impossible de préparer l'image de départ pour la correction.");
+    };
+    image.src = sourceUrl;
+
+    canvas.addEventListener("pointerdown", (event) => {
+        if (!canvas.width) {
+            return;
+        }
+        isDrawing = true;
+        lastPoint = pointForEvent(event);
+        canvas.setPointerCapture?.(event.pointerId);
+        context.beginPath();
+        context.arc(lastPoint.x, lastPoint.y, Math.max(5, canvas.width / 150), 0, Math.PI * 2);
+        context.fillStyle = "#ff3f56";
+        context.fill();
+        hasMark = true;
+    });
+    canvas.addEventListener("pointermove", (event) => {
+        if (!isDrawing || !lastPoint) {
+            return;
+        }
+        const point = pointForEvent(event);
+        context.save();
+        context.strokeStyle = "#ff304b";
+        context.lineWidth = Math.max(8, canvas.width / 95);
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.shadowColor = "rgba(255, 48, 75, .92)";
+        context.shadowBlur = Math.max(8, canvas.width / 65);
+        context.beginPath();
+        context.moveTo(lastPoint.x, lastPoint.y);
+        context.lineTo(point.x, point.y);
+        context.stroke();
+        context.restore();
+        lastPoint = point;
+        hasMark = true;
+    });
+    const stopDrawing = () => { isDrawing = false; lastPoint = null; };
+    canvas.addEventListener("pointerup", stopDrawing);
+    canvas.addEventListener("pointercancel", stopDrawing);
+    clearButton.addEventListener("click", () => {
+        redraw();
+        hasMark = false;
+    });
+    submitButton.addEventListener("click", () => {
+        if (!hasMark) {
+            showErrorMessage("Entoure d'abord le sticker que tu veux régénérer.");
+            return;
+        }
+        submitButton.disabled = true;
+        submitButton.textContent = "Envoi de la zone…";
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                submitButton.disabled = false;
+                submitButton.textContent = "Générer la correction";
+                return;
+            }
+            editor.remove();
+            if (temporaryUrl) {
+                URL.revokeObjectURL(temporaryUrl);
+            }
+            startCricutCorrection(
+                new File([blob], "sticker-entoure.png", { type: "image/png" }),
+                cricutState.conversationId
+            );
+        }, "image/png");
+    });
+}
+
+
+async function startCricutCorrection(markedImage, conversationId) {
+
+    const prompt = "genere une image du sticker entouré format png avec bords tres fin";
+    if (isDiscordTurnActive || !conversationId) {
+        return;
+    }
+
+    isDiscordTurnActive = true;
+    currentTurnIsImage = true;
+    currentImagePrompt = "Correction du sticker entouré";
+    currentConversationId = conversationId;
+    rememberActiveConversation();
+    hideThinking();
+    showImageGeneration();
+    const generation = document.getElementById("imageGeneration");
+    generation?.classList.add("cricut-correction-generation");
+    updateImageGenerationProgress("Analyse du sticker entouré…");
+
+    try {
+        const formData = new FormData();
+        formData.append("question", prompt);
+        formData.append("conversation_id", conversationId);
+        formData.append("reference_images", markedImage, markedImage.name);
+
+        const response = await fetch("/api/discord/turn", {
+            method: "POST",
+            body: formData
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+            throw new Error(payload.error || "Impossible d'envoyer la correction.");
+        }
+
+        savePendingDiscordTurn(payload.job_id, conversationId, true);
+        listenForDiscordEvents(payload.job_id);
+        loadConversations();
+    }
+    catch (error) {
+        finishDiscordTurn();
+        removeImageGeneration();
+        showErrorMessage(error.message || "Impossible d'envoyer la correction.");
+    }
 }
 
 
@@ -4838,21 +5105,6 @@ async function restoreCricutGeneration() {
         savedState.status || "Reconnexion à l'atelier Cricut en cours…"
     );
     listenForCricutEvents(savedState.jobId);
-}
-
-
-function downloadAllCricutImages(images) {
-
-    images.forEach((url, index) => {
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `nathgpt-sticker-${index + 1}.png`;
-        link.target = "_blank";
-        link.rel = "noopener";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-    });
 }
 
 
