@@ -83,14 +83,18 @@ textarea {
 }
 
 .launch-screen.is-finished { opacity: 0; visibility: hidden; pointer-events: none; }
-.launch-glow { position: absolute; z-index: -1; width: min(90vw, 430px); aspect-ratio: 1; border-radius: 50%; background: conic-gradient(from 0deg, transparent, rgba(100,255,183,.18), transparent, rgba(132,156,255,.16), transparent); filter: blur(14px); animation: launch-glow-spin 4.5s linear infinite; }
-.launch-logo-shell { display: grid; width: 92px; height: 92px; place-items: center; border: 1px solid rgba(204,255,227,.34); border-radius: 29px; background: linear-gradient(145deg, rgba(255,255,255,.16), rgba(91,238,159,.11)); box-shadow: inset 0 1px rgba(255,255,255,.28), 0 0 0 11px rgba(104,255,181,.06), 0 25px 45px rgba(0,0,0,.28); animation: launch-logo-in .72s cubic-bezier(.17,1.3,.28,1) both, launch-logo-float 2.7s 1s ease-in-out infinite; }
-.launch-logo-shell img { width: 72px; height: 72px; object-fit: contain; border-radius: 20px; }
-.launch-copy { display: grid; gap: 4px; text-align: center; animation: launch-copy-in .65s .13s ease both; }
-.launch-copy strong { font-size: 25px; letter-spacing: -.045em; }
-.launch-copy span { color: #b9c9bf; font-size: 12px; }
-.launch-progress { width: min(210px, 68vw); height: 5px; margin-top: 4px; overflow: hidden; border-radius: 99px; background: rgba(255,255,255,.10); box-shadow: inset 0 1px 2px rgba(0,0,0,.26); }
-.launch-progress i { display: block; width: 52%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #4ee097, #b5ffe0, #67bfeb); box-shadow: 0 0 13px rgba(106,255,185,.72); animation: launch-progress 1.35s cubic-bezier(.2,.8,.3,1) infinite; }
+.launch-screen::before { content: ""; position: absolute; z-index: -2; inset: 0; opacity: .34; background-image: linear-gradient(rgba(159,255,207,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(159,255,207,.06) 1px, transparent 1px); background-size: 30px 30px; -webkit-mask-image: radial-gradient(circle at center, black, transparent 68%); mask-image: radial-gradient(circle at center, black, transparent 68%); }
+.launch-glow { position: absolute; z-index: -1; width: min(94vw, 470px); aspect-ratio: 1; border-radius: 50%; background: conic-gradient(from 0deg, transparent 0 12%, rgba(100,255,183,.24) 19%, transparent 27% 50%, rgba(132,156,255,.20) 59%, transparent 69%); filter: blur(9px); animation: launch-glow-spin 5.6s linear infinite; }
+.launch-logo-shell { position: relative; display: grid; width: 108px; height: 108px; overflow: visible; place-items: center; border: 1px solid rgba(224,255,237,.47); border-radius: 34px; background: linear-gradient(145deg, rgba(255,255,255,.21), rgba(91,238,159,.14) 45%, rgba(80,112,174,.19)); box-shadow: inset 0 1px rgba(255,255,255,.42), 0 0 0 10px rgba(104,255,181,.07), 0 0 40px rgba(81,246,167,.20), 0 28px 55px rgba(0,0,0,.32); animation: launch-logo-in .76s cubic-bezier(.17,1.3,.28,1) both, launch-logo-float 2.7s 1s ease-in-out infinite; }
+.launch-logo-shell::before { content: ""; position: absolute; inset: -11px; border: 2px solid transparent; border-top-color: rgba(170,255,213,.9); border-right-color: rgba(139,187,255,.52); border-radius: 41px; filter: drop-shadow(0 0 8px rgba(108,255,186,.52)); animation: launch-orbit 1.65s linear infinite; }
+.launch-logo-shell::after { content: ""; position: absolute; width: 5px; height: 5px; top: -14px; right: 22px; border-radius: 50%; background: #d8ffed; box-shadow: 0 0 13px 4px rgba(124,255,194,.66); animation: launch-orbit-dot 1.65s linear infinite; }
+.launch-logo-shell img { width: 82px; height: 82px; object-fit: contain; border-radius: 25px; filter: drop-shadow(0 8px 13px rgba(0,0,0,.18)); }
+.launch-copy { display: grid; gap: 5px; margin-top: 4px; text-align: center; animation: launch-copy-in .65s .13s ease both; }
+.launch-copy strong { font-size: 27px; letter-spacing: -.052em; text-shadow: 0 3px 16px rgba(0,0,0,.24); }
+.launch-copy span { color: #c5d4cb; font-size: 12px; letter-spacing: .015em; }
+.launch-progress { position: relative; width: min(228px, 70vw); height: 7px; margin-top: 7px; overflow: hidden; border: 1px solid rgba(255,255,255,.10); border-radius: 99px; background: rgba(255,255,255,.065); box-shadow: inset 0 2px 4px rgba(0,0,0,.28), 0 8px 20px rgba(0,0,0,.12); }
+.launch-progress i { display: block; width: 42%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #31bf78, #bfffe3 48%, #64bce9); box-shadow: 0 0 16px rgba(106,255,185,.82); animation: launch-progress 1.5s cubic-bezier(.2,.8,.3,1) infinite; }
+.launch-progress::after { content: ""; position: absolute; inset: 0; background: linear-gradient(105deg, transparent 28%, rgba(255,255,255,.38), transparent 52%); transform: translateX(-130%); animation: launch-progress-shine 1.5s ease-in-out infinite; }
 .launch-star { position: absolute; color: #d9ffea; text-shadow: 0 0 18px rgba(104,255,185,.9); animation: launch-star 2.2s ease-in-out infinite; }
 .launch-star-one { top: 26%; left: 28%; font-size: 25px; }
 .launch-star-two { right: 27%; top: 34%; font-size: 19px; animation-delay: .6s; }
@@ -100,6 +104,9 @@ textarea {
 @keyframes launch-logo-float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
 @keyframes launch-copy-in { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes launch-progress { 0% { transform: translateX(-110%); } 55% { transform: translateX(125%); } 100% { transform: translateX(255%); } }
+@keyframes launch-progress-shine { 0%, 24% { transform: translateX(-130%); } 74%,100% { transform: translateX(180%); } }
+@keyframes launch-orbit { to { transform: rotate(360deg); } }
+@keyframes launch-orbit-dot { 0% { transform: rotate(0deg) translateX(0); } 100% { transform: rotate(360deg) translateX(0); } }
 @keyframes launch-star { 0%,100% { opacity: .24; transform: scale(.72) rotate(0); } 50% { opacity: 1; transform: scale(1.28) rotate(17deg); } }
 
 

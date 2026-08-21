@@ -1,4 +1,4 @@
-const CACHE_NAME = "nathgpt-shell-v2";
+const CACHE_NAME = "nathgpt-shell-v3";
 const APP_SHELL = [
     "/static/style.css",
     "/static/manifest.webmanifest?v=2",
@@ -32,15 +32,22 @@ self.addEventListener("notificationclick", (event) => {
                 const existing = windows.find((windowClient) =>
                     new URL(windowClient.url).origin === self.location.origin
                 );
-                return existing ? existing.focus() : clients.openWindow(destination);
+                if (existing) {
+                    return existing.navigate(destination).then(() => existing.focus());
+                }
+                return clients.openWindow(destination);
             })
     );
 });
 
-// Les futures notifications push (VAPID) arriveront ici. Le site utilise déjà
-// ce service worker pour les alertes de fin tant que l'app est ouverte.
 self.addEventListener("push", (event) => {
-    const data = event.data?.json() || {};
+    let data = {};
+    try {
+        data = event.data?.json() || {};
+    }
+    catch (_) {
+        data = {};
+    }
     event.waitUntil(self.registration.showNotification(data.title || "NathGPT", {
         body: data.body || "Ta génération est prête.",
         icon: "/logo.png?v=2",

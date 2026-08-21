@@ -120,6 +120,13 @@ SUPABASE_ACCOUNTS_TABLE = os.environ.get(
     "nathgpt_accounts",
 ).strip() or "nathgpt_accounts"
 
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
+VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
+VAPID_SUBJECT = os.environ.get(
+    "VAPID_SUBJECT",
+    "mailto:admin@example.com",
+).strip()
+
 TOKENS_FILE = DATA_DIR / "tokens.json"
 
 CONVERSATIONS_FILE = DATA_DIR / "conversations.json"
@@ -551,6 +558,73 @@ def get_reference_images():
     return result
 
 
+def web_push_is_configured():
+    """Indique si l'envoi de notifications Web Push est prêt côté serveur."""
+    return bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
+
+
+def send_web_push_notification(username, title, body, conversation_id=None):
+    """Avertit tous les appareils abonnés d'un compte, sans bloquer le bot."""
+    if not web_push_is_configured():
+        return
+
+    try:
+        from pywebpush import WebPushException, webpush
+    except ImportError:
+        # Le site et Discord restent disponibles même si le déploiement n'a
+        # pas encore installé la dépendance de notifications.
+        app.logger.warning("Notifications Web Push indisponibles : pywebpush manque.")
+        return
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        return
+
+    subscriptions = users[user_key].get("web_push_subscriptions", [])
+    if not isinstance(subscriptions, list):
+        return
+
+    payload = json.dumps({
+        "title": str(title)[:120],
+        "body": str(body)[:240],
+        "url": "/chat",
+        "conversation_id": str(conversation_id or "")[:100],
+    }, ensure_ascii=False)
+    valid_subscriptions = []
+    changed = False
+
+    for subscription in subscriptions:
+        if not isinstance(subscription, dict) or not subscription.get("endpoint"):
+            changed = True
+            continue
+
+        try:
+            webpush(
+                subscription_info=subscription,
+                data=payload,
+                vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_SUBJECT},
+            )
+            valid_subscriptions.append(subscription)
+        except WebPushException as error:
+            status = getattr(getattr(error, "response", None), "status_code", None)
+            # Une souscription expirée ne doit pas empêcher les autres
+            # appareils de recevoir leur notification.
+            if status in {404, 410}:
+                changed = True
+                continue
+            valid_subscriptions.append(subscription)
+            app.logger.warning("Notification Web Push non envoyée : %s", error)
+        except Exception:
+            valid_subscriptions.append(subscription)
+            app.logger.exception("Erreur pendant l'envoi d'une notification Web Push")
+
+    if changed:
+        users[user_key]["web_push_subscriptions"] = valid_subscriptions
+        save_json(USERS_FILE, users)
+
+
 def save_discord_result(username, conversation_id, event):
 
     if event.get("type") == "image":
@@ -560,6 +634,12 @@ def save_discord_result(username, conversation_id, event):
             "assistant",
             "Image générée",
             event.get("url")
+        )
+        send_web_push_notification(
+            username,
+            "Ton image est prête",
+            "NathGPT a terminé ta génération.",
+            conversation_id,
         )
 
     elif event.get("type") == "text":
@@ -578,6 +658,12 @@ def save_discord_result(username, conversation_id, event):
             "assistant",
             f"Stickers Cricut terminés · {len(images)} image(s) prête(s) à télécharger.",
             cricut_images=images,
+        )
+        send_web_push_notification(
+            username,
+            "Tes stickers Cricut sont prêts",
+            f"{len(images)} image(s) sont prêtes à télécharger.",
+            conversation_id,
         )
 
 
@@ -1383,6 +1469,66 @@ def service_worker():
     response.headers["Service-Worker-Allowed"] = "/"
     response.headers["Cache-Control"] = "no-cache"
     return response
+
+
+@app.route("/api/notifications/config")
+def notification_config():
+    """Expose uniquement la clé publique nécessaire à l'abonnement du navigateur."""
+    if not session.get("username"):
+        return jsonify({"error": "Connexion requise."}), 401
+
+    return jsonify({
+        "enabled": web_push_is_configured(),
+        "public_key": VAPID_PUBLIC_KEY if web_push_is_configured() else "",
+    })
+
+
+@app.route("/api/notifications/subscribe", methods=["POST"])
+def subscribe_to_notifications():
+    """Enregistre un appareil pour les alertes de fin de génération."""
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+
+    if not web_push_is_configured():
+        return jsonify({"error": "Les notifications push ne sont pas encore configurées."}), 503
+
+    subscription = request.get_json(silent=True)
+    endpoint = str((subscription or {}).get("endpoint", "")).strip()
+    keys = (subscription or {}).get("keys")
+    if not endpoint.startswith("https://") or not isinstance(keys, dict):
+        return jsonify({"error": "Abonnement de notification invalide."}), 400
+
+    clean_subscription = {
+        "endpoint": endpoint[:2000],
+        "expirationTime": (subscription or {}).get("expirationTime"),
+        "keys": {
+            "p256dh": str(keys.get("p256dh", ""))[:500],
+            "auth": str(keys.get("auth", ""))[:500],
+        },
+    }
+    if not clean_subscription["keys"]["p256dh"] or not clean_subscription["keys"]["auth"]:
+        return jsonify({"error": "Clés de notification invalides."}), 400
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        return jsonify({"error": "Compte introuvable."}), 404
+
+    subscriptions = users[user_key].setdefault("web_push_subscriptions", [])
+    if not isinstance(subscriptions, list):
+        subscriptions = []
+        users[user_key]["web_push_subscriptions"] = subscriptions
+
+    subscriptions[:] = [
+        item for item in subscriptions
+        if isinstance(item, dict) and item.get("endpoint") != clean_subscription["endpoint"]
+    ]
+    subscriptions.append(clean_subscription)
+    users[user_key]["web_push_subscriptions"] = subscriptions[-10:]
+    save_json(USERS_FILE, users)
+
+    return jsonify({"ok": True})
 
 
 @app.route("/health")

@@ -80,19 +80,53 @@
             return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
         }
 
-        function updateNotificationUi(message) {
+        function updateNotificationUi(message, complete = false) {
             if (!("Notification" in window)) {
                 notificationButton.disabled = true;
                 notificationHelp.textContent = "Les notifications ne sont pas disponibles dans ce navigateur.";
                 return;
             }
             if (Notification.permission === "granted") {
-                notificationButton.disabled = true;
-                notificationButton.textContent = "✓ Notifications activées";
-                notificationHelp.textContent = "Tu seras averti lorsqu'une génération se termine.";
+                notificationButton.disabled = complete;
+                notificationButton.textContent = complete
+                    ? "✓ Notifications activées"
+                    : "Activer les alertes de fond";
+                notificationHelp.textContent = message || "Autorisation accordée. Les alertes de fin de génération vont être synchronisées.";
                 return;
             }
             notificationHelp.textContent = message || "Tu pourras modifier cette autorisation dans les réglages du navigateur.";
+        }
+
+        function urlBase64ToUint8Array(value) {
+            const padding = "=".repeat((4 - value.length % 4) % 4);
+            const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+            const raw = window.atob(base64);
+            return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+        }
+
+        async function activateBackgroundNotifications(registration) {
+            const configResponse = await fetch("/api/notifications/config", { cache: "no-store" });
+            const config = await configResponse.json();
+            if (!configResponse.ok || !config.enabled || !config.public_key) {
+                throw new Error("Les notifications de fond ne sont pas encore configurées sur le serveur.");
+            }
+
+            let subscription = await registration.pushManager.getSubscription();
+            if (!subscription) {
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: urlBase64ToUint8Array(config.public_key)
+                });
+            }
+
+            const saveResponse = await fetch("/api/notifications/subscribe", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(subscription)
+            });
+            if (!saveResponse.ok) {
+                throw new Error("L'abonnement aux notifications n'a pas pu être enregistré.");
+            }
         }
 
         notificationButton.addEventListener("click", async () => {
@@ -102,14 +136,24 @@
                 return;
             }
             try {
+                let registration = null;
                 if ("serviceWorker" in navigator) {
-                    await navigator.serviceWorker.register("/service-worker.js");
+                    registration = await navigator.serviceWorker.register("/service-worker.js");
                 }
                 const permission = await Notification.requestPermission();
-                updateNotificationUi(permission === "granted" ? "" : "Autorisation non accordée. Tu peux réessayer ou vérifier les réglages du navigateur.");
+                if (permission !== "granted") {
+                    updateNotificationUi("Autorisation non accordée. Tu peux réessayer ou vérifier les réglages du navigateur.");
+                    return;
+                }
+                if (!registration || !("PushManager" in window)) {
+                    updateNotificationUi("Notifications activées quand NathGPT est ouvert. Les alertes de fond ne sont pas prises en charge sur cet appareil.");
+                    return;
+                }
+                await activateBackgroundNotifications(registration);
+                updateNotificationUi("Tu seras averti même si NathGPT est en arrière-plan ou fermé.", true);
             }
-            catch (_) {
-                updateNotificationUi("Impossible d'activer les notifications sur cet appareil.");
+            catch (error) {
+                updateNotificationUi(error.message || "Impossible d'activer les notifications sur cet appareil.");
             }
         });
 

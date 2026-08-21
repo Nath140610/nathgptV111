@@ -348,6 +348,38 @@ let responseRevealTimer = null;
 let staffLogoClickCount = 0;
 let staffLogoClickTimer = null;
 
+const pendingDiscordTurnKey = "nathgpt-pending-discord-turn:" + (document.body.dataset.accountKey || "account");
+
+
+function savePendingDiscordTurn(jobId, conversationId, expectsImage) {
+    try {
+        localStorage.setItem(pendingDiscordTurnKey, JSON.stringify({
+            jobId,
+            conversationId,
+            expectsImage: Boolean(expectsImage)
+        }));
+    }
+    catch (_) {
+        // La discussion reste suivie normalement même sans stockage local.
+    }
+}
+
+
+function readPendingDiscordTurn() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(pendingDiscordTurnKey) || "null");
+        return saved?.jobId ? saved : null;
+    }
+    catch (_) {
+        return null;
+    }
+}
+
+
+function clearPendingDiscordTurn() {
+    localStorage.removeItem(pendingDiscordTurnKey);
+}
+
 
 function registerStaffLogoClick() {
 
@@ -703,6 +735,11 @@ async function startDiscordTurn(question, referenceImages = []) {
         }
 
 
+        savePendingDiscordTurn(
+            payload.job_id,
+            currentConversationId,
+            currentTurnIsImage
+        );
         listenForDiscordEvents(payload.job_id);
         loadConversations();
 
@@ -838,6 +875,7 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
         if (payload.type === "image") {
 
             stopStream();
+            clearPendingDiscordTurn();
             finishDiscordTurn();
             loadConversations();
             recordGenerationDuration();
@@ -858,9 +896,17 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
 
 
         stopStream();
+        clearPendingDiscordTurn();
         finishDiscordTurn();
-        revealThinkingResponse(payload.message || "Réponse Discord vide.");
-        removeImageGeneration();
+        if (payload.type === "error") {
+            hideThinking();
+            removeImageGeneration();
+            showErrorMessage(payload.message || "Le bot Discord a rencontré une erreur.");
+        }
+        else {
+            revealThinkingResponse(payload.message || "Réponse Discord vide.");
+            removeImageGeneration();
+        }
         loadConversations();
     };
 
@@ -878,6 +924,68 @@ function finishDiscordTurn() {
     currentTurnIsImage = false;
 
     sendButton.disabled = input.value.trim() === "";
+}
+
+
+function restorePendingDiscordTurn() {
+
+    const pending = readPendingDiscordTurn();
+    if (!pending || isDiscordTurnActive) {
+        return;
+    }
+
+    isDiscordTurnActive = true;
+    currentTurnIsImage = Boolean(pending.expectsImage);
+    currentConversationId = pending.conversationId || currentConversationId;
+    rememberActiveConversation();
+    welcome.style.display = "none";
+
+    if (currentTurnIsImage) {
+        showImageGeneration();
+        updateImageGenerationProgress("Reprise de la génération en cours…");
+    }
+    else {
+        showThinking();
+        updateThinkingStatus();
+    }
+
+    listenForDiscordEvents(pending.jobId);
+}
+
+
+function reconnectPendingDiscordTurn() {
+
+    const pending = readPendingDiscordTurn();
+    if (!pending) {
+        return;
+    }
+
+    // iOS peut suspendre EventSource lorsque la PWA reste en arrière-plan.
+    // Au retour au premier plan on recrée donc le flux : le serveur renvoie
+    // son dernier résultat conservé, même s'il est arrivé entre-temps.
+    if (activeDiscordStream) {
+        activeDiscordStream.close();
+        activeDiscordStream = null;
+    }
+
+    isDiscordTurnActive = true;
+    currentTurnIsImage = Boolean(pending.expectsImage);
+    currentConversationId = pending.conversationId || currentConversationId;
+    rememberActiveConversation();
+    welcome.style.display = "none";
+
+    if (currentTurnIsImage) {
+        if (!document.getElementById("imageGeneration")) {
+            hideThinking();
+            showImageGeneration();
+        }
+        updateImageGenerationProgress("Reconnexion à la génération en cours…");
+    }
+    else if (!document.getElementById("aiThinking")) {
+        showThinking();
+    }
+
+    listenForDiscordEvents(pending.jobId);
 }
 
 
@@ -1200,7 +1308,7 @@ async function loadConversations() {
             // Pendant une décomposition Cricut, la carte de suivi doit être
             // restaurée à la place du simple message « Adaptation Cricut ».
             // Sans cela, les deux restaurations asynchrones se remplaçaient.
-            if (readCricutRecovery()?.jobId) {
+            if (readCricutRecovery()?.jobId || readPendingDiscordTurn()?.jobId) {
                 return;
             }
 
@@ -4732,8 +4840,19 @@ if (navigator.vibrate && !sessionStorage.getItem("nathgpt-launch-haptic")) {
     sessionStorage.setItem("nathgpt-launch-haptic", "1");
 }
 
-loadConversations();
+restorePendingDiscordTurn();
 restoreCricutGeneration();
+loadConversations();
+
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+        window.setTimeout(reconnectPendingDiscordTurn, 250);
+    }
+});
+
+window.addEventListener("pageshow", () => {
+    window.setTimeout(reconnectPendingDiscordTurn, 250);
+});
 
 document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
