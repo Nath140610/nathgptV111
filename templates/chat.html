@@ -24,6 +24,7 @@
         rel="stylesheet"
         href="{{ url_for('static', filename='style.css', v=asset_version) }}"
     >
+    <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
 </head>
 
 <body class="chat-page" data-account-key="{{ username }}">
@@ -5067,6 +5068,13 @@ function completeCricutGeneration(images) {
         images,
         cricutState.conversationId || currentConversationId
     );
+
+    // Le résultat est déjà sauvegardé dans la discussion. Il ne doit plus
+    // être considéré comme une génération active au prochain démarrage,
+    // sinon la page stickers se rouvre à chaque connexion.
+    const completedJobId = cricutState.jobId;
+    localStorage.removeItem(cricutRecoveryKey);
+    removeSavedCricutReference(completedJobId);
     scrollToBottom();
 }
 
@@ -5381,14 +5389,17 @@ async function restoreCricutGeneration() {
         return;
     }
 
+    // Une génération terminée appartient à l'historique des discussions :
+    // on ne force jamais son affichage à la connexion.
+    if (savedState.completed) {
+        localStorage.removeItem(cricutRecoveryKey);
+        removeSavedCricutReference(savedState.jobId);
+        return;
+    }
+
     const sourceImage = await getCricutReference(savedState.jobId);
     welcome.style.display = "none";
     showCricutGeneration(sourceImage, savedState);
-
-    if (savedState.completed) {
-        completeCricutGeneration(savedState.images || []);
-        return;
-    }
 
     isDiscordTurnActive = true;
     updateCricutStatus(

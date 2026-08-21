@@ -84,6 +84,53 @@ body.has-service-outage .main {
 }
 
 
+/* Écran d'installation obligatoire sur téléphone hors application installée. */
+.pwa-install-gate {
+    position: fixed;
+    z-index: 2147483647;
+    inset: 0;
+    display: grid;
+    min-height: 100svh;
+    padding: max(24px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+    overflow: auto;
+    place-items: center;
+    color: #f5fbf7;
+    background:
+        radial-gradient(circle at 76% 10%, rgba(98, 247, 169, .19), transparent 29%),
+        radial-gradient(circle at 12% 91%, rgba(112, 135, 255, .17), transparent 37%),
+        #19201e;
+    animation: pwa-gate-in .42s ease both;
+    isolation: isolate;
+}
+.pwa-install-card {
+    position: relative;
+    width: min(100%, 420px);
+    padding: 28px 23px 21px;
+    overflow: hidden;
+    border: 1px solid rgba(185,255,219,.24);
+    border-radius: 28px;
+    text-align: center;
+    background: linear-gradient(145deg, rgba(40,61,54,.90), rgba(25,30,31,.96));
+    box-shadow: 0 30px 80px rgba(0,0,0,.38), inset 0 1px rgba(255,255,255,.14);
+}
+.pwa-install-card::before { content: ""; position: absolute; inset: -65% 26% auto; height: 250px; border: 1px solid rgba(171,255,212,.14); border-radius: 50%; box-shadow: 0 0 0 28px rgba(105,245,166,.035); pointer-events: none; }
+.pwa-install-logo { position: relative; width: 70px; height: 70px; margin-bottom: 12px; border-radius: 22px; object-fit: contain; filter: drop-shadow(0 12px 19px rgba(41,241,150,.23)); }
+.pwa-install-kicker { position: relative; display: block; color: #a9f8cf; font-size: 10px; font-weight: 850; letter-spacing: .15em; }
+.pwa-install-card h1 { position: relative; margin: 9px auto; font-size: clamp(21px, 6vw, 27px); line-height: 1.08; letter-spacing: -.045em; }
+.pwa-install-card > p { position: relative; margin: 0 auto 19px; color: #c7d7cf; font-size: 13px; line-height: 1.5; }
+.pwa-install-steps { position: relative; display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; text-align: left; }
+.pwa-install-steps li { display: grid; grid-template-columns: 23px 1fr; gap: 9px; align-items: center; padding: 9px 10px; border: 1px solid rgba(210,255,230,.10); border-radius: 13px; color: #e8f3ed; background: rgba(255,255,255,.045); font-size: 12px; line-height: 1.35; }
+.pwa-install-steps b { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 8px; color: #134332; background: linear-gradient(145deg, #a2ffd1, #58d891); font-size: 11px; }
+.pwa-install-button { position: relative; width: 100%; margin-top: 14px; padding: 12px 14px; border: 1px solid rgba(208,255,228,.42); border-radius: 14px; color: #103c2b; background: linear-gradient(135deg, #b9ffdd, #67e9a2); box-shadow: 0 11px 26px rgba(41,235,145,.18); font: inherit; font-size: 13px; font-weight: 850; cursor: pointer; }
+.pwa-install-button:disabled { opacity: .68; cursor: wait; }
+.pwa-install-card > small { position: relative; display: block; margin-top: 14px; color: #a9bdb3; font-size: 10px; line-height: 1.42; }
+.pwa-install-glow { position: absolute; z-index: -1; width: 45vw; aspect-ratio: 1; border-radius: 50%; filter: blur(35px); opacity: .34; pointer-events: none; animation: pwa-gate-glow 5s ease-in-out infinite alternate; }
+.pwa-install-glow.glow-one { top: 7%; left: -15%; background: #3ee89a; }
+.pwa-install-glow.glow-two { right: -17%; bottom: 5%; background: #8495ff; animation-delay: -2.3s; }
+@keyframes pwa-gate-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pwa-gate-glow { to { transform: translate3d(8%, -5%, 0) scale(1.17); } }
+
+
 button,
 input,
 textarea {
