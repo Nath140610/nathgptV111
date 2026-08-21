@@ -1,10 +1,33 @@
 /* NathGPT est réservé sur téléphone à son application ajoutée à l'écran d'accueil. */
 (() => {
+    if (document.body.classList.contains("staff-page")) {
+        return;
+    }
+
     const isMobile = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent);
     const isStandalone = window.matchMedia("(display-mode: standalone)").matches
         || window.navigator.standalone === true;
 
-    if (!isMobile || isStandalone) {
+    const requiresPwaInstall = isMobile && !isStandalone;
+
+    if (!requiresPwaInstall) {
+        const startNotificationGate = () => {
+            if (!("Notification" in window)) {
+                return;
+            }
+            if (Notification.permission === "granted") {
+                syncNotificationSubscription().catch(() => {});
+                return;
+            }
+            renderNotificationGate();
+        };
+
+        if (document.readyState === "loading") {
+            document.addEventListener("DOMContentLoaded", startNotificationGate, { once: true });
+        }
+        else {
+            startNotificationGate();
+        }
         return;
     }
 
@@ -27,6 +50,111 @@
     });
 
     const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+    function urlBase64ToUint8Array(value) {
+        const padding = "=".repeat((4 - value.length % 4) % 4);
+        const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+        const raw = window.atob(base64);
+        return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+    }
+
+    async function syncNotificationSubscription() {
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+            return;
+        }
+
+        const registration = await navigator.serviceWorker.register("/service-worker.js");
+        const configResponse = await fetch("/api/notifications/config", { cache: "no-store" });
+        const config = await configResponse.json();
+        if (!configResponse.ok || !config.enabled || !config.public_key) {
+            return;
+        }
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(config.public_key)
+            });
+        }
+
+        await fetch("/api/notifications/subscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(subscription)
+        });
+    }
+
+    function renderNotificationGate() {
+        if (document.getElementById("notificationRequiredGate")) {
+            return;
+        }
+
+        const gate = document.createElement("main");
+        gate.id = "notificationRequiredGate";
+        gate.className = "pwa-install-gate notification-required-gate";
+        gate.setAttribute("role", "dialog");
+        gate.setAttribute("aria-modal", "true");
+        gate.setAttribute("aria-label", "Activer les notifications");
+        gate.innerHTML = `
+            <div class="pwa-install-glow glow-one"></div><div class="pwa-install-glow glow-two"></div>
+            <div class="pwa-install-card notification-required-card">
+                <div class="notification-required-icon" aria-hidden="true">✦</div>
+                <span class="pwa-install-kicker">NATHGPT</span>
+                <h1>Active les notifications pour continuer</h1>
+                <p>Tu recevras une alerte quand une image ou une demande Cricut est prete, meme si NathGPT est en arriere-plan.</p>
+                <button type="button" class="pwa-install-button" data-enable-notifications>Activer les notifications</button>
+                <small data-notification-help>Cette autorisation est necessaire pour utiliser NathGPT.</small>
+            </div>
+        `;
+
+        const button = gate.querySelector("[data-enable-notifications]");
+        const help = gate.querySelector("[data-notification-help]");
+
+        const checkPermission = async () => {
+            if (Notification.permission === "granted") {
+                button.disabled = true;
+                button.textContent = "Notifications activees";
+                help.textContent = "Configuration de tes alertes...";
+                try {
+                    await syncNotificationSubscription();
+                }
+                catch (_) {
+                    // L'alerte locale reste disponible si les push de fond ne sont pas configures.
+                }
+                gate.classList.add("is-leaving");
+                window.setTimeout(() => gate.remove(), 320);
+                return;
+            }
+
+            if (Notification.permission === "denied") {
+                button.textContent = "Verifier l'autorisation";
+                help.textContent = "Les notifications sont bloquees. Active-les dans les reglages du navigateur, puis appuie ici.";
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = "Demande d'autorisation...";
+            const permission = await Notification.requestPermission();
+            button.disabled = false;
+            if (permission === "granted") {
+                await checkPermission();
+            }
+            else {
+                button.textContent = "Reessayer";
+                help.textContent = "Sans cette autorisation, NathGPT ne peut pas continuer.";
+            }
+        };
+
+        button.addEventListener("click", () => {
+            checkPermission().catch(() => {
+                button.disabled = false;
+                button.textContent = "Reessayer";
+                help.textContent = "Impossible d'activer les notifications sur cet appareil.";
+            });
+        });
+        document.body.appendChild(gate);
+    }
 
     const renderGate = () => {
         const gate = document.createElement("main");
