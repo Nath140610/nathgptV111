@@ -783,6 +783,8 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
 
     activeDiscordStream = stream;
     let lastEventAt = Date.now();
+    let lastHistoryCheckAt = 0;
+    let historyRecoveryInProgress = false;
     let closed = false;
 
     const stopStream = () => {
@@ -818,17 +820,75 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
             return;
         }
 
-        finishDiscordTurn();
-        hideThinking();
-        removeImageGeneration();
-        showErrorMessage("Le bot Discord ne répond plus. Tu peux réessayer sans perdre ta discussion.");
-        loadConversations();
+        recoverSavedDiscordResult().then((recovered) => {
+            if (recovered) {
+                return;
+            }
+            finishDiscordTurn();
+            hideThinking();
+            removeImageGeneration();
+            clearPendingDiscordTurn();
+            showErrorMessage("Le bot Discord ne répond plus. Tu peux réessayer sans perdre ta discussion.");
+            loadConversations();
+        });
+    };
+
+    const recoverSavedDiscordResult = async () => {
+        if (historyRecoveryInProgress) {
+            return false;
+        }
+
+        const pending = readPendingDiscordTurn();
+        if (!pending || pending.jobId !== jobId || !pending.conversationId) {
+            return false;
+        }
+
+        historyRecoveryInProgress = true;
+        try {
+            const response = await fetch(
+                "/api/conversations/" + encodeURIComponent(pending.conversationId),
+                { cache: "no-store" }
+            );
+            if (!response.ok) {
+                return false;
+            }
+
+            const conversation = (await response.json()).conversation;
+            const savedMessages = conversation?.messages || [];
+            const lastUserIndex = savedMessages.map((item) => item.role).lastIndexOf("user");
+            const completedMessage = savedMessages
+                .slice(lastUserIndex + 1)
+                .find((item) => item.role === "assistant");
+
+            if (!completedMessage) {
+                return false;
+            }
+
+            stopStream();
+            clearPendingDiscordTurn();
+            finishDiscordTurn();
+            hideThinking();
+            removeImageGeneration();
+            await openConversation(pending.conversationId);
+            loadConversations();
+            return true;
+        }
+        catch (_) {
+            return false;
+        }
+        finally {
+            historyRecoveryInProgress = false;
+        }
     };
 
     const watchdog = window.setInterval(() => {
         if (activeDiscordStream !== stream || !isDiscordTurnActive) {
             stopStream();
             return;
+        }
+        if (Date.now() - lastHistoryCheckAt > 7000) {
+            lastHistoryCheckAt = Date.now();
+            recoverSavedDiscordResult();
         }
         if (Date.now() - lastEventAt > 38000) {
             reconnectOrFail();
@@ -986,6 +1046,29 @@ function reconnectPendingDiscordTurn() {
     }
 
     listenForDiscordEvents(pending.jobId);
+}
+
+
+function finishImageRevealAfterBackground() {
+
+    const generation = document.getElementById("imageGeneration");
+    const imageUrl = generation?.dataset?.imageUrl;
+    if (!imageUrl) {
+        return false;
+    }
+
+    // Une image finale existe déjà, mais son animation a été gelée par iOS.
+    // On l'affiche sous forme de résultat classique, ce qui est préférable à
+    // une carte de génération qui resterait bloquée indéfiniment.
+    stopConstellationAnimation();
+    removeImageGeneration();
+    hideThinking();
+    clearPendingDiscordTurn();
+    finishDiscordTurn();
+    addSavedImage(imageUrl);
+    loadConversations();
+    scrollToBottom();
+    return true;
 }
 
 
@@ -1931,21 +2014,48 @@ function showImageGeneration() {
 
 function receiveGeneratedImage(imageUrl) {
 
+    const generationCard = document.getElementById("imageGeneration");
+    if (generationCard) {
+        // Cette donnée est écrite avant le chargement de l'image. Safari peut
+        // suspendre l'événement image.onload lorsque la PWA passe en arrière-
+        // plan : au retour, on peut alors terminer l'affichage sans attendre.
+        generationCard.dataset.imageUrl = imageUrl;
+    }
+
     const image =
         new Image();
+
+    let hasRevealed = false;
+
+    const showReliableImageFallback = () => {
+        if (hasRevealed) {
+            return;
+        }
+
+        hasRevealed = true;
+        stopConstellationAnimation();
+        removeImageGeneration();
+        addSavedImage(imageUrl);
+        scrollToBottom();
+    };
+
+    const loadingTimeout = window.setTimeout(
+        showReliableImageFallback,
+        12000
+    );
 
 
     image.onload =
         function () {
 
-            stopConstellationAnimation();
-
-
-            const generation = document.getElementById("imageGeneration");
-
-            if (generation) {
-                generation.dataset.imageUrl = imageUrl;
+            if (hasRevealed) {
+                return;
             }
+
+            hasRevealed = true;
+            window.clearTimeout(loadingTimeout);
+
+            stopConstellationAnimation();
 
 
             adaptFrameToImage(
@@ -1978,20 +2088,8 @@ function receiveGeneratedImage(imageUrl) {
 
     image.onerror =
         function () {
-
-            const status =
-                document.getElementById(
-                    "imageGenerationStatus"
-                );
-
-
-            if (status) {
-
-                status.textContent =
-                    "Impossible de charger l'image.";
-
-            }
-
+            window.clearTimeout(loadingTimeout);
+            showReliableImageFallback();
         };
 
 
@@ -4846,12 +4944,20 @@ loadConversations();
 
 document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-        window.setTimeout(reconnectPendingDiscordTurn, 250);
+        window.setTimeout(() => {
+            if (!finishImageRevealAfterBackground()) {
+                reconnectPendingDiscordTurn();
+            }
+        }, 250);
     }
 });
 
 window.addEventListener("pageshow", () => {
-    window.setTimeout(reconnectPendingDiscordTurn, 250);
+    window.setTimeout(() => {
+        if (!finishImageRevealAfterBackground()) {
+            reconnectPendingDiscordTurn();
+        }
+    }, 250);
 });
 
 document.addEventListener("keydown", (event) => {
