@@ -140,6 +140,24 @@ AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 
 SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
 
+FEATURE_MAINTENANCE_DEFAULTS = {
+    "text_generation": {
+        "label": "Réponses texte",
+        "description": "Désactive uniquement les réponses textuelles envoyées via le chat NathGPT.",
+        "default_reason": "Les réponses texte sont temporairement en maintenance. Réessaie dans quelques instants.",
+    },
+    "image_generation": {
+        "label": "Génération d'images",
+        "description": "Coupe uniquement les générations et modifications d'images, sans bloquer les réponses texte.",
+        "default_reason": "La génération d'images est temporairement en maintenance. Les réponses texte restent disponibles.",
+    },
+    "cricut": {
+        "label": "Mode Cricut",
+        "description": "Désactive uniquement l'adaptation Cricut et la découpe automatisée des stickers.",
+        "default_reason": "Le mode Cricut est temporairement en maintenance. Réessaie plus tard.",
+    },
+}
+
 OUTAGE_STAFF_NOTIFICATION_COOLDOWN_SECONDS = 10 * 60
 TRIAL_ACCESS_HOURS = 24
 
@@ -750,6 +768,95 @@ def get_reference_images():
     return result
 
 
+def get_feature_maintenance_state():
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+
+    raw_features = state.get("features")
+    if not isinstance(raw_features, dict):
+        raw_features = {}
+
+    features = {}
+    for key, meta in FEATURE_MAINTENANCE_DEFAULTS.items():
+        raw_feature = raw_features.get(key, {})
+        if not isinstance(raw_feature, dict):
+            raw_feature = {}
+
+        enabled = raw_feature.get("enabled")
+        if enabled is None:
+            enabled = True
+
+        features[key] = {
+            "key": key,
+            "label": meta["label"],
+            "description": meta["description"],
+            "enabled": bool(enabled),
+            "maintenance_reason": str(raw_feature.get("maintenance_reason") or "").strip(),
+            "default_reason": meta["default_reason"],
+            "updated_at": raw_feature.get("updated_at") or None,
+            "updated_by": raw_feature.get("updated_by") or None,
+        }
+
+    return features
+
+
+def is_feature_enabled(feature_key):
+    feature = get_feature_maintenance_state().get(feature_key)
+    if not feature:
+        return True
+    return bool(feature.get("enabled"))
+
+
+def set_feature_enabled(feature_key, enabled, reason="", updated_by="staff"):
+    if feature_key not in FEATURE_MAINTENANCE_DEFAULTS:
+        raise KeyError(feature_key)
+
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+
+    features = state.get("features")
+    if not isinstance(features, dict):
+        features = {}
+        state["features"] = features
+
+    feature_state = features.get(feature_key)
+    if not isinstance(feature_state, dict):
+        feature_state = {}
+        features[feature_key] = feature_state
+
+    feature_state["enabled"] = bool(enabled)
+    feature_state["updated_at"] = utc_now()
+    feature_state["updated_by"] = str(updated_by or "staff")[:60]
+
+    if enabled:
+        feature_state.pop("maintenance_reason", None)
+    else:
+        cleaned_reason = " ".join(str(reason or "").split())[:180]
+        feature_state["maintenance_reason"] = (
+            cleaned_reason
+            or FEATURE_MAINTENANCE_DEFAULTS[feature_key]["default_reason"]
+        )
+
+    save_json(SERVICE_STATUS_FILE, state)
+    return get_feature_maintenance_state()[feature_key]
+
+
+def feature_maintenance_response(feature_key, status_code=503):
+    feature = get_feature_maintenance_state().get(feature_key)
+    if not feature:
+        return jsonify({
+            "error": "Cette fonctionnalité est temporairement indisponible.",
+        }), status_code
+
+    message = feature["maintenance_reason"] or feature["default_reason"]
+    return jsonify({
+        "error": message,
+        "feature_maintenance": feature,
+    }), status_code
+
+
 def get_service_status():
     state = load_json(SERVICE_STATUS_FILE, {})
     if not isinstance(state, dict):
@@ -771,6 +878,7 @@ def get_service_status():
         "error_code": str(state.get("error_code") or "API-503")[:40],
         "started_at": state.get("started_at") or None,
         "staff_notified_at": state.get("staff_notified_at") or None,
+        "features": get_feature_maintenance_state(),
     }
 
 
@@ -1780,6 +1888,7 @@ def render_staff_dashboard(
         active_window_minutes=STAFF_ACTIVE_WINDOW_SECONDS // 60,
         staff_csrf_token=get_staff_csrf_token(),
         discord_category_id=discord_bridge.category_id,
+        feature_states=list(get_feature_maintenance_state().values()),
         temporary_password=temporary_password,
         temporary_username=temporary_username,
         notification_report=notification_report,
@@ -2839,6 +2948,37 @@ def staff_broadcast_notification():
     return render_staff_dashboard(notification_report=report)
 
 
+@app.route("/staff/features/<feature_key>/toggle", methods=["POST"])
+def staff_feature_toggle(feature_key):
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+
+    if feature_key not in FEATURE_MAINTENANCE_DEFAULTS:
+        return "Fonctionnalité inconnue.", 404
+
+    raw_enabled = str(request.form.get("enabled", "")).strip().lower()
+    enable_feature = raw_enabled in {"1", "true", "yes", "on"}
+    reason = request.form.get("maintenance_reason", "")
+
+    feature_state = set_feature_enabled(
+        feature_key,
+        enable_feature,
+        reason=reason,
+        updated_by=session.get("username") or "staff",
+    )
+
+    if feature_state["enabled"]:
+        flash(f"{feature_state['label']} est de nouveau disponible.", "success")
+    else:
+        flash(f"{feature_state['label']} passe en maintenance ciblée.", "success")
+
+    return redirect(url_for("staff_panel"))
+
+
 @app.route("/staff/accounts/<username>/<action>", methods=["POST"])
 def staff_account_action(username, action):
     """Actions sensibles disponibles uniquement au staff authentifiÃ©."""
@@ -3041,6 +3181,12 @@ def discord_turn():
         bool(reference_images),
     )
 
+    if expects_image and not is_feature_enabled("image_generation"):
+        return feature_maintenance_response("image_generation")
+
+    if not expects_image and not is_feature_enabled("text_generation"):
+        return feature_maintenance_response("text_generation")
+
     save_conversation_message(
         username,
         conversation_id,
@@ -3094,6 +3240,9 @@ def start_cricut_job():
 
     if get_service_status()["outage"]:
         return service_outage_response()
+
+    if not is_feature_enabled("cricut"):
+        return feature_maintenance_response("cricut")
 
     users = load_json(USERS_FILE, {})
     user_key = find_user_key(users, username)

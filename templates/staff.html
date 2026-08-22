@@ -79,6 +79,40 @@
                 </div>
             </section>
 
+            <section class="staff-feature-grid" aria-label="Maintenance par fonctionnalité">
+                {% for feature in feature_states %}
+                    <article class="staff-feature-card {% if not feature.enabled %}is-disabled{% endif %}">
+                        <div class="staff-feature-copy">
+                            <p>Maintenance ciblée</p>
+                            <h2>{{ feature.label }}</h2>
+                            <small>{{ feature.description }}</small>
+                            <span class="staff-feature-badge {% if feature.enabled %}is-enabled{% else %}is-disabled{% endif %}">
+                                {{ "Disponible" if feature.enabled else "En maintenance" }}
+                            </span>
+                            {% if not feature.enabled and feature.maintenance_reason %}
+                                <div class="staff-feature-reason">{{ feature.maintenance_reason }}</div>
+                            {% endif %}
+                            {% if feature.updated_at %}
+                                <div class="staff-feature-meta">Dernière modification : {{ feature.updated_at }}{% if feature.updated_by %} · {{ feature.updated_by }}{% endif %}</div>
+                            {% endif %}
+                        </div>
+
+                        <form method="POST" action="{{ url_for('staff_feature_toggle', feature_key=feature.key) }}" class="staff-feature-form" autocomplete="off">
+                            <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                            {% if feature.enabled %}
+                                <input type="hidden" name="enabled" value="0">
+                                <label for="featureReason-{{ feature.key }}">Message affiché aux utilisateurs</label>
+                                <input id="featureReason-{{ feature.key }}" name="maintenance_reason" maxlength="180" placeholder="{{ feature.default_reason }}">
+                                <button type="submit" class="staff-action-warn">Mettre en maintenance</button>
+                            {% else %}
+                                <input type="hidden" name="enabled" value="1">
+                                <button type="submit" class="staff-action-good">Réactiver</button>
+                            {% endif %}
+                        </form>
+                    </article>
+                {% endfor %}
+            </section>
+
             <section class="staff-notification-broadcast" aria-label="Notification globale">
                 <div>
                     <p>Notification Web Push</p>

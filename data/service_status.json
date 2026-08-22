@@ -1,5 +1,16 @@
 {
   "started_at": "2026-08-21T20:47:10.607303+00:00",
-  "outage": true,
-  "error_code": "API-DISCORD"
+  "outage": false,
+  "error_code": "API-503",
+  "features": {
+    "text_generation": {
+      "enabled": true
+    },
+    "image_generation": {
+      "enabled": true
+    },
+    "cricut": {
+      "enabled": true
+    }
+  }
 }

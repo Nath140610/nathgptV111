@@ -7,3 +7,5 @@ NathGPT - correctifs et animations (22/08/2026)
 - Animation de démarrage modernisée : arrivée plus douce du logo, halo premium, respiration, anneaux et sortie avec transition lumineuse/floutée.
 - Animation de génération d'image enrichie/remplacée visuellement : champ d'étoiles étendu, scintillements, poussière stellaire, double comète et profondeur lumineuse.
 - Vérification syntaxique Python (server.py, discord_bridge.py) et JavaScript principal effectuée.
+
+- Ajout d'une maintenance ciblée par fonctionnalité depuis /staff (réponses texte, génération d'images, mode Cricut).
