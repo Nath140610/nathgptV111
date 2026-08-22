@@ -65,11 +65,22 @@
             </form>
         </section>
 
-        <section class="settings-card settings-stats-card">
+        <section class="settings-card settings-activity-card">
             <p class="settings-eyebrow">Activité</p>
-            <h2>Mes statistiques</h2>
-            <p>Retrouve le nombre de conversations, questions, réponses et générations réalisées avec ton compte.</p>
-            <a class="settings-primary-link" href="{{ url_for('my_statistics') }}">Voir mes statistiques</a>
+            <h2>Historique et statistiques</h2>
+            <p>Retrouve tes générations et consulte les statistiques détaillées de ton compte depuis un seul endroit.</p>
+            <div class="settings-activity-links">
+                <a class="settings-primary-link settings-action-tile" href="{{ url_for('generation_history_page') }}">
+                    <span class="settings-action-icon">◫</span>
+                    <span><strong>Historique des générations</strong><small>Images et préparations Cricut, avec recherche et filtres.</small></span>
+                    <b>›</b>
+                </a>
+                <a class="settings-primary-link settings-action-tile" href="{{ url_for('my_statistics') }}">
+                    <span class="settings-action-icon">▥</span>
+                    <span><strong>Mes statistiques</strong><small>Conversations, questions, réponses et générations.</small></span>
+                    <b>›</b>
+                </a>
+            </div>
         </section>
 
         <section class="settings-card settings-shares">

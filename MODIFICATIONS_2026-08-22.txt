@@ -32,3 +32,7 @@ NathGPT - correctifs et animations (22/08/2026)
 - V6 : statistiques runtime actualisées automatiquement toutes les 5 secondes côté staff.
 
 - Logo auto-versionné par empreinte SHA-256 : remplacer logo.png suffit pour actualiser le logo web/PWA au prochain lancement, sans ancien cache.
+
+- V8 : écran de chargement central entièrement circulaire (suppression de l'effet carte carrée).
+- V8 : Historique des générations et Mes statistiques regroupés dans Paramètres.
+- V8 : boutons et interactions tactiles accélérés avec feedback de pression immédiat.

@@ -261,6 +261,17 @@ APP_RELEASES.append({
         "Compteur d'erreurs système sur les dernières 24 heures",
     ],
 })
+APP_RELEASES.append({
+    "version": "2026.08.22.8",
+    "title": "Navigation et réactivité",
+    "date": "2026-08-22T19:50:00+02:00",
+    "additions": [
+        "Écran de chargement entièrement circulaire",
+        "Historique des générations déplacé dans les paramètres",
+        "Mes statistiques regroupées dans les paramètres",
+        "Boutons plus réactifs sur ordinateur et mobile",
+    ],
+})
 APP_RELEASE = APP_RELEASES[-1]
 
 BUG_STATUS_LABELS = {
@@ -3876,7 +3887,31 @@ def revoke_share(token):
     return redirect(url_for("settings"))
 
 
+@app.route("/settings/generations")
+def generation_history_page():
+    username = session.get("username")
+    if not username:
+        return redirect(url_for("login"))
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        session.clear()
+        return redirect(url_for("login"))
+
+    theme = users[user_key].get("theme") or "nathgpt"
+    return render_template(
+        "generation_history.html",
+        username=user_key,
+        generation_items=flatten_generation_history(user_key),
+        user_theme=theme,
+        theme_color=THEME_OPTIONS.get(theme, THEME_OPTIONS["nathgpt"])["color"],
+        battery_saver=bool(users[user_key].get("battery_saver")),
+    )
+
+
 @app.route("/stats")
+@app.route("/settings/stats")
 def my_statistics():
     username = session.get("username")
     if not username:

@@ -112,15 +112,7 @@
             ✧ Générations automatiques
         </button>
         {% endif %}
-
-        <button class="generation-history-entry" type="button" onclick="openGenerationHistory()">
-            ◫ Historique des générations
-        </button>
-        <button class="generation-history-entry" type="button" onclick="window.location.href='{{ url_for('my_statistics') }}'">
-            ▥ Mes statistiques
-        </button>
-
-        <div class="history">
+<div class="history">
 
             <div class="history-title">
                 Discussions
@@ -337,8 +329,6 @@
             <button type="button" class="mobile-cricut-entry" onclick="openCricutUploader()">✦ Adapter des stickers</button>
             <button type="button" class="mobile-automatic-generation-entry" onclick="openAutomaticGenerations()">✧ Générations automatiques</button>
             {% endif %}
-            <button type="button" class="mobile-generation-history-entry" onclick="closeMobileHistory(); openGenerationHistory();">◫ Historique des générations</button>
-            <button type="button" class="mobile-generation-history-entry" onclick="window.location.href='{{ url_for('my_statistics') }}'">▥ Mes statistiques</button>
             <div class="mobile-history-list" id="mobileHistoryList"></div>
             <a class="mobile-history-settings" href="{{ url_for('settings') }}">⚙ Paramètres</a>
         </aside>
@@ -2113,6 +2103,13 @@ async function loadConversations() {
             // restaurée à la place du simple message « Adaptation Cricut ».
             // Sans cela, les deux restaurations asynchrones se remplaçaient.
             if (readCricutRecovery()?.jobId || readPendingDiscordTurn()?.jobId) {
+                return;
+            }
+
+            const requestedConversation = new URLSearchParams(window.location.search).get("conversation");
+            if (requestedConversation && savedItems.some(item => item.id === requestedConversation)) {
+                history.replaceState({}, document.title, window.location.pathname);
+                openConversation(requestedConversation);
                 return;
             }
 

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="{{ theme_color }}">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="/manifest.webmanifest?v={{ logo_version }}">
+    <link rel="icon" type="image/png" href="/logo.png?v={{ logo_version }}">
+    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ logo_version }}">
+    <title>Historique des générations - NathGPT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
+    <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
+</head>
+<body class="settings-page generation-history-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}">
+    <main class="settings-shell generation-history-settings-shell">
+        <header class="settings-header">
+            <div class="settings-brand">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT">
+                <div><p>Paramètres · Activité</p><h1>Historique des générations</h1></div>
+            </div>
+            <a class="staff-return" href="{{ url_for('settings') }}">Retour aux paramètres</a>
+        </header>
+
+        <section class="settings-card generation-history-settings-card">
+            <div class="generation-history-settings-heading">
+                <div><p class="settings-eyebrow">Bibliothèque</p><h2>Tes images et créations Cricut</h2></div>
+                <span id="generationCount">{{ generation_items|length }} génération(s)</span>
+            </div>
+            <div class="generation-history-settings-tools">
+                <input id="generationSearch" type="search" placeholder="Rechercher un prompt ou une conversation…" autocomplete="off">
+                <select id="generationFilter" aria-label="Filtrer les générations">
+                    <option value="all">Tout</option>
+                    <option value="image">Images</option>
+                    <option value="cricut">Cricut</option>
+                </select>
+            </div>
+            <div class="generation-history-settings-grid" id="generationGrid"></div>
+        </section>
+    </main>
+
+    <script id="generationData" type="application/json">{{ generation_items|tojson }}</script>
+    <script>
+        const allGenerations = JSON.parse(document.getElementById("generationData").textContent || "[]");
+        const grid = document.getElementById("generationGrid");
+        const count = document.getElementById("generationCount");
+        const search = document.getElementById("generationSearch");
+        const filter = document.getElementById("generationFilter");
+
+        function escapeHtml(value) {
+            return String(value || "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+        }
+
+        function renderGenerations() {
+            const query = search.value.trim().toLowerCase();
+            const kind = filter.value;
+            const items = allGenerations.filter(item => {
+                if (kind !== "all" && item.type !== kind) return false;
+                const haystack = `${item.prompt || ""} ${item.conversation_title || ""}`.toLowerCase();
+                return !query || haystack.includes(query);
+            });
+            count.textContent = `${items.length} génération${items.length > 1 ? "s" : ""}`;
+            if (!items.length) {
+                grid.innerHTML = '<div class="generation-history-empty">Aucune génération ne correspond à cette recherche.</div>';
+                return;
+            }
+            grid.innerHTML = items.map(item => `
+                <article class="settings-generation-card">
+                    <a href="/?conversation=${encodeURIComponent(item.conversation_id || "")}">
+                        <div class="settings-generation-preview"><img src="${escapeHtml(item.image_url)}" loading="lazy" alt=""></div>
+                        <div class="settings-generation-copy">
+                            <span class="generation-history-type">${item.type === "cricut" ? "Cricut" : "Image"}</span>
+                            <strong>${escapeHtml(item.prompt || item.conversation_title || "Génération")}</strong>
+                            <small>${escapeHtml(item.conversation_title || "Conversation")}</small>
+                        </div>
+                    </a>
+                </article>`).join("");
+        }
+
+        search.addEventListener("input", renderGenerations);
+        filter.addEventListener("change", renderGenerations);
+        document.addEventListener("pointerdown", event => {
+            const target = event.target.closest("button, a, select, input");
+            if (target) target.classList.add("is-pressing");
+        }, {passive:true});
+        document.addEventListener("pointerup", () => document.querySelectorAll(".is-pressing").forEach(el => el.classList.remove("is-pressing")), {passive:true});
+        document.addEventListener("pointercancel", () => document.querySelectorAll(".is-pressing").forEach(el => el.classList.remove("is-pressing")), {passive:true});
+        renderGenerations();
+    </script>
+</body>
+</html>
