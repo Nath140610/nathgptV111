@@ -34,6 +34,7 @@
     <div class="launch-aurora launch-aurora-two"></div>
     <div class="launch-grid"></div>
     <div class="launch-glow"></div>
+    <div class="launch-light-trails" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="launch-particle-field" aria-hidden="true">
         <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
     </div>
@@ -202,7 +203,7 @@
                 >
 
                 <h1>
-                    Comment puis-je vous aider ?
+                    Comment puis-je vous aider, {{ username }} ?
                 </h1>
 
                 <p>
@@ -355,9 +356,10 @@ const referencePreview =
 
 let constellationAnimationFrame = null;
 
-const notificationSound = new Audio("/static/sonerie.mp3");
+const notificationSound = new Audio("{{ url_for('static', filename='sonerie.mp3', v=asset_version) }}");
 notificationSound.preload = "auto";
 notificationSound.volume = 0.72;
+notificationSound.playsInline = true;
 let notificationSoundUnlocked = false;
 
 function unlockNotificationSound() {
@@ -386,6 +388,7 @@ function playNotificationSound() {
 }
 
 document.addEventListener("pointerdown", unlockNotificationSound, { once: true, passive: true });
+document.addEventListener("keydown", unlockNotificationSound, { once: true });
 
 let imageRevealAnimationFrame = null;
 
@@ -414,6 +417,7 @@ let generationStartedAt = 0;
 let learnedGenerationDuration = getLearnedGenerationDuration();
 
 let thinkingPreviewTimer = null;
+let thinkingPreviewOrganizeTimer = null;
 
 let responseRevealTimer = null;
 
@@ -1117,6 +1121,22 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
 
             const queue = parseQueueStatus(payload.message);
             if (queue) {
+                if (queue.isProcessing) {
+                    hideQueueWait();
+                    if (currentTurnIsImage) {
+                        if (!document.getElementById("imageGeneration")) {
+                            showImageGeneration();
+                        }
+                        updateImageGenerationProgress("Création en cours...");
+                    }
+                    else {
+                        if (!document.getElementById("aiThinking")) {
+                            showThinking();
+                        }
+                        updateThinkingStatus("NathGPT organise ses pensées...");
+                    }
+                    return;
+                }
                 hideThinking();
                 removeImageGeneration();
                 showQueueWait(queue);
@@ -1312,12 +1332,12 @@ function finishImageRevealAfterBackground() {
 }
 
 
-function updateThinkingStatus() {
+function updateThinkingStatus(message = "NathGPT réfléchit...") {
 
     const label = document.querySelector("#aiThinking .thinking-text");
 
     if (label) {
-        label.textContent = "NathGPT réfléchit...";
+        label.textContent = message;
     }
 }
 
@@ -1335,7 +1355,7 @@ function parseQueueStatus(message) {
 
     const position = Math.max(1, Number(match[1]) || 1);
     const total = Math.max(position, Number(match[2]) || position);
-    return { position, total };
+    return { position, total, isProcessing: position === 1 && total === 1 };
 }
 
 
@@ -1626,6 +1646,11 @@ function revealThinkingResponse(text) {
     if (thinkingPreviewTimer) {
         clearTimeout(thinkingPreviewTimer);
         thinkingPreviewTimer = null;
+    }
+
+    if (thinkingPreviewOrganizeTimer) {
+        clearTimeout(thinkingPreviewOrganizeTimer);
+        thinkingPreviewOrganizeTimer = null;
     }
 
     if (responseRevealTimer) {
@@ -2349,6 +2374,11 @@ function hideThinking() {
         thinkingPreviewTimer = null;
     }
 
+    if (thinkingPreviewOrganizeTimer) {
+        clearTimeout(thinkingPreviewOrganizeTimer);
+        thinkingPreviewOrganizeTimer = null;
+    }
+
     if (responseRevealTimer) {
         clearTimeout(responseRevealTimer);
         responseRevealTimer = null;
@@ -2406,9 +2436,43 @@ function animateThinkingPreview() {
         }
 
         thinkingPreviewTimer = null;
+        thinkingPreviewOrganizeTimer = setTimeout(() => {
+            organizeThinkingPreview(currentPreview, draft);
+            thinkingPreviewOrganizeTimer = null;
+        }, 360);
     };
 
     writeNextCharacter();
+}
+
+
+function organizeThinkingPreview(preview, draft) {
+    if (!preview || !document.body.contains(preview)) {
+        return;
+    }
+
+    const caption = document.querySelector("#aiThinking .thinking-preview-caption");
+    const caret = document.querySelector("#aiThinking .thinking-preview-caret");
+    const letters = document.createDocumentFragment();
+
+    preview.textContent = "";
+    preview.classList.add("is-organizing");
+
+    Array.from(draft).forEach((character, index) => {
+        const letter = document.createElement("span");
+        letter.className = "thinking-letter";
+        letter.textContent = character === " " ? "\u00a0" : character;
+        letter.style.setProperty("--thought-delay", Math.min(index * 7, 1150) + "ms");
+        letters.appendChild(letter);
+    });
+
+    preview.appendChild(letters);
+    if (caption) {
+        caption.textContent = "Les idées prennent leur place";
+    }
+    if (caret) {
+        caret.classList.add("is-organizing");
+    }
 }
 
 
@@ -2480,6 +2544,11 @@ function showImageGeneration() {
                 <span class="generation-aurora-two"></span>
                 <span class="generation-aurora-three"></span>
             </div>
+
+            <div class="generation-star-map" aria-hidden="true">
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+            </div>
+            <div class="generation-star-comet" aria-hidden="true"></div>
 
             <div class="generation-grid" aria-hidden="true"></div>
             <div class="generation-sweep" aria-hidden="true"></div>

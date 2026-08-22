@@ -1542,6 +1542,37 @@ textarea {
 }
 
 
+.thinking-preview-copy.is-organizing {
+    filter: none;
+    opacity: 1;
+    text-shadow: none;
+}
+
+
+.thinking-letter {
+    display: inline-block;
+    min-width: .08em;
+    opacity: 0;
+    filter: blur(7px);
+    transform: translate3d(0, 12px, 0) rotate(3deg);
+    transform-origin: 50% 100%;
+    animation: thought-letter-settle .46s cubic-bezier(.18,.8,.22,1) var(--thought-delay) forwards;
+}
+
+
+.thinking-preview-caret.is-organizing {
+    opacity: .22;
+    animation: none;
+}
+
+
+@keyframes thought-letter-settle {
+    0% { opacity: 0; filter: blur(7px); transform: translate3d(0, 12px, 0) rotate(3deg) scale(.92); }
+    55% { opacity: .96; filter: blur(1.5px); }
+    100% { opacity: 1; filter: blur(0); transform: translate3d(0, 0, 0) rotate(0) scale(1); }
+}
+
+
 .thinking-preview-caret {
     display: inline-block;
     width: 2px;
@@ -4389,4 +4420,147 @@ textarea::placeholder {
         }
     }
 
+}
+
+
+/* Animation de démarrage : halo blanc et traînées de lumière, plus sobre qu'un effet arcade. */
+.launch-light-trails {
+    position: absolute;
+    z-index: -1;
+    inset: -20%;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.launch-light-trails i {
+    position: absolute;
+    width: min(78vw, 460px);
+    height: 1px;
+    opacity: 0;
+    background: linear-gradient(90deg, transparent, rgba(29,29,31,.04) 14%, rgba(29,29,31,.42) 50%, rgba(29,29,31,.04) 86%, transparent);
+    box-shadow: 0 0 15px rgba(29,29,31,.10);
+    transform: rotate(-38deg) translate3d(-80%, 0, 0);
+    animation: launch-light-trail 4.8s cubic-bezier(.2,.75,.25,1) infinite;
+}
+
+.launch-light-trails i:nth-child(1) { top: 28%; left: -10%; animation-delay: .2s; }
+.launch-light-trails i:nth-child(2) { top: 54%; left: 26%; animation-delay: 1.75s; animation-duration: 5.7s; }
+.launch-light-trails i:nth-child(3) { top: 76%; left: -2%; animation-delay: 3.2s; animation-duration: 5.2s; }
+
+.launch-particle-field,
+.launch-star { opacity: .42; }
+
+.launch-logo-stage { animation: launch-logo-arrive .82s cubic-bezier(.16,.88,.25,1) both; }
+.launch-logo-shell { animation: launch-logo-breathe 4.6s 1s ease-in-out infinite; }
+.launch-rings { animation: launch-rings-breathe 4.6s 1s ease-in-out infinite; }
+
+@keyframes launch-light-trail {
+    0%, 17% { opacity: 0; transform: rotate(-38deg) translate3d(-95%, 0, 0); }
+    32% { opacity: .8; }
+    58%, 100% { opacity: 0; transform: rotate(-38deg) translate3d(145%, 0, 0); }
+}
+
+@keyframes launch-logo-arrive {
+    from { opacity: 0; transform: translate3d(0, 20px, 0) scale(.86); filter: blur(8px); }
+    to { opacity: 1; transform: translate3d(0, 0, 0) scale(1); filter: blur(0); }
+}
+
+@keyframes launch-logo-breathe {
+    0%, 100% { transform: translateY(0) scale(1); box-shadow: 0 12px 32px rgba(20,20,24,.11), inset 0 1px rgba(255,255,255,.94); }
+    50% { transform: translateY(-4px) scale(1.018); box-shadow: 0 19px 42px rgba(20,20,24,.15), inset 0 1px rgba(255,255,255,1); }
+}
+
+@keyframes launch-rings-breathe {
+    0%, 100% { opacity: .42; transform: scale(.94); }
+    50% { opacity: .72; transform: scale(1.04); }
+}
+
+
+/* Génération d'image : une petite carte céleste et une comète autour de la création. */
+.generation-star-map {
+    position: absolute;
+    z-index: 4;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    mask-image: radial-gradient(ellipse at center, black 5%, transparent 73%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 5%, transparent 73%);
+}
+
+.generation-star-map i {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 9px 2px rgba(213,224,255,.82), 0 0 21px rgba(152,174,255,.34);
+    animation: generation-star-twinkle 2.8s ease-in-out infinite;
+}
+
+.generation-star-map i:nth-child(1) { top: 13%; left: 13%; animation-delay: .2s; }
+.generation-star-map i:nth-child(2) { top: 24%; left: 80%; animation-delay: 1.2s; transform: scale(.65); }
+.generation-star-map i:nth-child(3) { top: 70%; left: 19%; animation-delay: 2.1s; transform: scale(.55); }
+.generation-star-map i:nth-child(4) { top: 80%; left: 75%; animation-delay: .7s; transform: scale(.8); }
+.generation-star-map i:nth-child(5) { top: 42%; left: 8%; animation-delay: 1.8s; transform: scale(.52); }
+.generation-star-map i:nth-child(6) { top: 14%; left: 59%; animation-delay: 2.5s; transform: scale(.55); }
+.generation-star-map i:nth-child(7) { top: 61%; left: 89%; animation-delay: 1.4s; transform: scale(.65); }
+.generation-star-map i:nth-child(8) { top: 88%; left: 46%; animation-delay: 2.9s; transform: scale(.48); }
+.generation-star-map i:nth-child(9) { top: 31%; left: 33%; animation-delay: .9s; transform: scale(.42); }
+.generation-star-map i:nth-child(10) { top: 56%; left: 68%; animation-delay: 2.3s; transform: scale(.58); }
+.generation-star-map i:nth-child(11) { top: 12%; left: 37%; animation-delay: 1.55s; transform: scale(.42); }
+.generation-star-map i:nth-child(12) { top: 78%; left: 55%; animation-delay: .35s; transform: scale(.62); }
+
+.generation-star-comet {
+    position: absolute;
+    z-index: 5;
+    top: 24%;
+    left: -34%;
+    width: 42%;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, rgba(194,210,255,.08), rgba(255,255,255,.96));
+    box-shadow: 0 0 11px rgba(220,230,255,.86), 0 0 28px rgba(147,175,255,.50);
+    transform: rotate(-16deg);
+    animation: generation-comet-pass 5.8s cubic-bezier(.2,.75,.2,1) .8s infinite;
+}
+
+.generation-star-comet::after {
+    content: "";
+    position: absolute;
+    right: -2px;
+    top: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 13px 4px rgba(220,231,255,.76);
+}
+
+.is-revealing .generation-star-map,
+.is-complete .generation-star-map,
+.is-revealing .generation-star-comet,
+.is-complete .generation-star-comet { opacity: 0; transition: opacity .55s ease; }
+
+@keyframes generation-star-twinkle {
+    0%, 100% { opacity: .18; filter: blur(.2px); }
+    48% { opacity: .96; filter: blur(0); }
+    58% { opacity: .35; }
+}
+
+@keyframes generation-comet-pass {
+    0%, 15% { opacity: 0; transform: translate3d(0, 0, 0) rotate(-16deg); }
+    26% { opacity: .9; }
+    49%, 100% { opacity: 0; transform: translate3d(340%, 102%, 0) rotate(-16deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .launch-light-trails i,
+    .launch-logo-stage,
+    .launch-logo-shell,
+    .launch-rings,
+    .thinking-letter,
+    .generation-star-map i,
+    .generation-star-comet { animation: none !important; }
+    .thinking-letter { opacity: 1; filter: none; transform: none; }
 }
