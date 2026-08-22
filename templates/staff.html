@@ -79,6 +79,42 @@
                 </div>
             </section>
 
+            <section class="staff-notification-broadcast" aria-label="Notification globale">
+                <div>
+                    <p>Notification Web Push</p>
+                    <h2>Notifier tous les utilisateurs</h2>
+                    <small>La notification est envoyée aux appareils qui ont autorisé NathGPT et enregistré une souscription.</small>
+                </div>
+                <details {% if notification_report %}open{% endif %}>
+                    <summary>Préparer un envoi global</summary>
+                    <form method="POST" action="{{ url_for('staff_broadcast_notification') }}" autocomplete="off">
+                        <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                        <label for="broadcastTitle">Titre</label>
+                        <input id="broadcastTitle" name="title" maxlength="120" required placeholder="Information NathGPT">
+                        <label for="broadcastBody">Message</label>
+                        <textarea id="broadcastBody" name="body" maxlength="240" required placeholder="Écris le message à envoyer à tous les appareils abonnés."></textarea>
+                        <label for="broadcastConfirmation">Écris <strong>NOTIFIER TOUS</strong> pour confirmer</label>
+                        <input id="broadcastConfirmation" name="confirmation" required autocomplete="off">
+                        <button type="submit">Envoyer la notification</button>
+                    </form>
+                </details>
+
+                {% if notification_report %}
+                    <div class="staff-notification-report {% if notification_report.errors %}has-errors{% else %}is-success{% endif %}" role="status">
+                        <strong>{{ notification_report.sent }} notification(s) envoyée(s)</strong>
+                        <span>{{ notification_report.subscribed_accounts }} compte(s) abonné(s) · {{ notification_report.subscriptions }} appareil(s) ciblé(s)</span>
+                        <span>{{ notification_report.expired }} souscription(s) expirée(s) retirée(s) · {{ notification_report.failed }} échec(s)</span>
+                        {% if notification_report.errors %}
+                            <ul>
+                                {% for error in notification_report.errors %}
+                                    <li>{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </section>
+
             <section class="staff-category-danger" aria-label="Nettoyage global Discord">
                 <div>
                     <p>Discord · action irréversible</p>

@@ -30,6 +30,7 @@ import secrets
 import threading
 import time
 import unicodedata
+import base64
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
@@ -809,15 +810,52 @@ def outage_code_for_error(error):
     return "API-DISCORD"
 
 
+def web_push_configuration_errors():
+    """Retourne des erreurs sûres à afficher au staff, sans exposer de clé."""
+    errors = []
+    if not VAPID_SUBJECT:
+        errors.append("VAPID_SUBJECT est manquant.")
+    elif VAPID_SUBJECT.startswith("mailto:"):
+        email = VAPID_SUBJECT.removeprefix("mailto:")
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+            errors.append("VAPID_SUBJECT contient une adresse e-mail invalide.")
+    else:
+        subject_url = urlparse(VAPID_SUBJECT)
+        if subject_url.scheme != "https" or not subject_url.netloc:
+            errors.append("VAPID_SUBJECT doit être un mailto: valide ou une URL https:// valide.")
+
+    if not VAPID_PUBLIC_KEY:
+        errors.append("VAPID_PUBLIC_KEY est manquante.")
+    else:
+        try:
+            padded_key = VAPID_PUBLIC_KEY + "=" * (-len(VAPID_PUBLIC_KEY) % 4)
+            public_key_bytes = base64.urlsafe_b64decode(padded_key.encode("ascii"))
+            if len(public_key_bytes) != 65 or public_key_bytes[0] != 4:
+                raise ValueError("format")
+        except Exception:
+            errors.append("VAPID_PUBLIC_KEY est invalide.")
+
+    if not VAPID_PRIVATE_KEY:
+        errors.append("VAPID_PRIVATE_KEY est manquante.")
+    return errors
+
+
 def web_push_is_configured():
     """Indique si l'envoi de notifications Web Push est prêt côté serveur."""
-    return bool(VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY and VAPID_SUBJECT)
+    return not web_push_configuration_errors()
 
 
 def send_web_push_notification(username, title, body, conversation_id=None):
-    """Avertit tous les appareils abonnés d'un compte, sans bloquer le bot."""
-    if not web_push_is_configured():
-        return
+    """Avertit tous les appareils abonnés et retourne un bilan sans secrets."""
+    report = {
+        "sent": 0,
+        "expired": 0,
+        "failed": 0,
+        "subscriptions": 0,
+        "errors": web_push_configuration_errors(),
+    }
+    if report["errors"]:
+        return report
 
     try:
         from pywebpush import WebPushException, webpush
@@ -825,16 +863,17 @@ def send_web_push_notification(username, title, body, conversation_id=None):
         # Le site et Discord restent disponibles même si le déploiement n'a
         # pas encore installé la dépendance de notifications.
         app.logger.warning("Notifications Web Push indisponibles : pywebpush manque.")
-        return
+        report["errors"].append("La bibliothèque pywebpush est indisponible sur le serveur.")
+        return report
 
     users = load_json(USERS_FILE, {})
     user_key = find_user_key(users, username)
     if not user_key:
-        return
+        return report
 
     subscriptions = users[user_key].get("web_push_subscriptions", [])
     if not isinstance(subscriptions, list):
-        return
+        return report
 
     payload = json.dumps({
         "title": str(title)[:120],
@@ -849,6 +888,7 @@ def send_web_push_notification(username, title, body, conversation_id=None):
         if not isinstance(subscription, dict) or not subscription.get("endpoint"):
             changed = True
             continue
+        report["subscriptions"] += 1
 
         try:
             webpush(
@@ -858,22 +898,80 @@ def send_web_push_notification(username, title, body, conversation_id=None):
                 vapid_claims={"sub": VAPID_SUBJECT},
             )
             valid_subscriptions.append(subscription)
+            report["sent"] += 1
         except WebPushException as error:
             status = getattr(getattr(error, "response", None), "status_code", None)
             # Une souscription expirée ne doit pas empêcher les autres
             # appareils de recevoir leur notification.
             if status in {404, 410}:
                 changed = True
+                report["expired"] += 1
                 continue
             valid_subscriptions.append(subscription)
+            report["failed"] += 1
+            if status in {401, 403}:
+                report["errors"].append(
+                    "Le service Push a refusé l'authentification VAPID (clé privée ou subject à vérifier)."
+                )
+            elif status == 400:
+                report["errors"].append(
+                    "Le service Push a refusé une souscription ou la configuration VAPID."
+                )
+            else:
+                report["errors"].append(
+                    f"Le service Push a refusé une livraison (HTTP {status or 'inconnu'})."
+                )
             app.logger.warning("Notification Web Push non envoyée : %s", error)
         except Exception:
             valid_subscriptions.append(subscription)
+            report["failed"] += 1
+            report["errors"].append("Erreur technique lors de l'envoi d'une notification.")
             app.logger.exception("Erreur pendant l'envoi d'une notification Web Push")
 
     if changed:
         users[user_key]["web_push_subscriptions"] = valid_subscriptions
         save_json(USERS_FILE, users)
+
+    report["errors"] = list(dict.fromkeys(report["errors"]))
+    return report
+
+
+def send_web_push_broadcast(title, body):
+    """Envoie une notification staff à tous les comptes et agrège le résultat."""
+    configuration_errors = web_push_configuration_errors()
+    users = load_json(USERS_FILE, {})
+    report = {
+        "accounts": len(users) if isinstance(users, dict) else 0,
+        "subscribed_accounts": 0,
+        "subscriptions": 0,
+        "sent": 0,
+        "expired": 0,
+        "failed": 0,
+        "errors": list(configuration_errors),
+    }
+    if configuration_errors or not isinstance(users, dict):
+        return report
+
+    try:
+        import pywebpush  # noqa: F401
+    except ImportError:
+        report["errors"].append("La bibliothèque pywebpush est indisponible sur le serveur.")
+        return report
+
+    for username, details in users.items():
+        subscriptions = details.get("web_push_subscriptions", []) if isinstance(details, dict) else []
+        if isinstance(subscriptions, list) and any(
+            isinstance(subscription, dict) and subscription.get("endpoint")
+            for subscription in subscriptions
+        ):
+            report["subscribed_accounts"] += 1
+        user_report = send_web_push_notification(username, title, body)
+        for key in ("subscriptions", "sent", "expired", "failed"):
+            report[key] += int(user_report.get(key, 0) or 0)
+        report["errors"].extend(user_report.get("errors", []))
+
+    report["errors"] = list(dict.fromkeys(report["errors"]))
+    return report
 
 
 def start_automatic_cricut_from_image(username, image_url, metadata):
@@ -1530,7 +1628,11 @@ def get_settings_csrf_token():
     return token
 
 
-def render_staff_dashboard(temporary_password=None, temporary_username=None):
+def render_staff_dashboard(
+    temporary_password=None,
+    temporary_username=None,
+    notification_report=None,
+):
     accounts = staff_account_summaries()
     return render_template(
         "staff.html",
@@ -1542,6 +1644,7 @@ def render_staff_dashboard(temporary_password=None, temporary_username=None):
         discord_category_id=discord_bridge.category_id,
         temporary_password=temporary_password,
         temporary_username=temporary_username,
+        notification_report=notification_report,
     )
 
 
@@ -2549,6 +2652,29 @@ def staff_panel():
         return render_template("staff.html", authenticated=False)
 
     return render_staff_dashboard()
+
+
+@app.route("/staff/notifications/broadcast", methods=["POST"])
+def staff_broadcast_notification():
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+
+    if request.form.get("confirmation", "").strip() != "NOTIFIER TOUS":
+        flash("Écris NOTIFIER TOUS pour confirmer l'envoi global.", "error")
+        return redirect(url_for("staff_panel"))
+
+    title = " ".join(request.form.get("title", "").split())[:120]
+    body = " ".join(request.form.get("body", "").split())[:240]
+    if not title or not body:
+        flash("Le titre et le message de la notification sont obligatoires.", "error")
+        return redirect(url_for("staff_panel"))
+
+    report = send_web_push_broadcast(title, body)
+    return render_staff_dashboard(notification_report=report)
 
 
 @app.route("/staff/accounts/<username>/<action>", methods=["POST"])
