@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from queue import Empty, Queue
+from collections import deque
 import re
 import threading
 import time
@@ -89,6 +90,7 @@ class DiscordBridge:
         self._pending_new_account_notifications = []
         self._jobs = {}
         self._channel_jobs = {}
+        self._completed_metrics = deque(maxlen=200)
         self._conversations = self._load_conversations()
         self._image_messages = self._load_image_messages()
 
@@ -350,6 +352,9 @@ class DiscordBridge:
                 "kind": "chat",
                 "metadata": dict(metadata or {}),
                 "expects_image": bool(expects_image),
+                "started_monotonic": time.monotonic(),
+                "started_at": time.time(),
+                "queue_waiting": None,
                 "text_messages": {},
                 "text_message_order": [],
                 "text_result_timer": None,
@@ -415,6 +420,9 @@ class DiscordBridge:
                 "conversation_key": f"{username.casefold()}:{conversation_id}",
                 "kind": "cricut",
                 "metadata": dict(metadata or {}),
+                "started_monotonic": time.monotonic(),
+                "started_at": time.time(),
+                "queue_waiting": None,
                 "cricut_total": 0,
                 "cricut_current": 0,
                 "cricut_images": [],
@@ -473,6 +481,58 @@ class DiscordBridge:
             return None
 
         return job["conversation_id"]
+
+    @staticmethod
+    def _queue_waiting_from_status(content):
+        text = " ".join((content or "").split())
+        if not text:
+            return None
+        has_queue_word = bool(re.search(
+            r"demande\s+en\s+attente|file\s+d['’]attente|queue|queued",
+            text,
+            re.I,
+        ))
+        match = re.search(r"(?:position\s*)?(\d+)\s*(?:/|sur)\s*(\d+)", text, re.I)
+        if has_queue_word and match:
+            raw_total = max(int(match.group(1)), int(match.group(2)))
+            return max(0, raw_total - 1)
+
+        # Tout autre statut de progression signifie que le job a quitté la
+        # file et est désormais réellement en traitement.
+        if re.search(
+            r"r[ée]flexion\s+en\s+cours|thinking|g[ée]n[ée]ration|processing|render|\b\d{1,3}\s*%",
+            text,
+            re.I,
+        ):
+            return 0
+        return None
+
+    def runtime_metrics(self):
+        with self._lock:
+            active_jobs = [
+                job for job in self._jobs.values()
+                if isinstance(job, dict) and not job.get("final_event")
+            ]
+            queue_reports = [
+                int(job.get("queue_waiting"))
+                for job in active_jobs
+                if isinstance(job.get("queue_waiting"), int)
+            ]
+            completed = list(self._completed_metrics)
+
+        queue_waiting = max(queue_reports) if queue_reports else 0
+        recent_completed = completed[-50:]
+        average_seconds = (
+            sum(item["duration_seconds"] for item in recent_completed) / len(recent_completed)
+            if recent_completed
+            else 0.0
+        )
+        return {
+            "queue_waiting": int(queue_waiting),
+            "active_jobs": len(active_jobs),
+            "average_generation_seconds": round(average_seconds, 2),
+            "completed_sample": len(recent_completed),
+        }
 
     def _run(self):
         """Garde le client Discord vivant et le relance après toute coupure."""
@@ -996,6 +1056,11 @@ class DiscordBridge:
             return
 
         if self._is_progress(content):
+            waiting_count = self._queue_waiting_from_status(content)
+            with self._lock:
+                active_job = self._jobs.get(job_id)
+                if active_job is not None and waiting_count is not None:
+                    active_job["queue_waiting"] = waiting_count
             self._publish(job_id, {"type": "status", "message": content})
             return
 
@@ -1226,6 +1291,14 @@ class DiscordBridge:
             job["events"].put(event)
             if final:
                 job["final_event"] = event
+                started_monotonic = job.get("started_monotonic")
+                if isinstance(started_monotonic, (int, float)):
+                    self._completed_metrics.append({
+                        "duration_seconds": max(0.0, time.monotonic() - started_monotonic),
+                        "completed_at": time.time(),
+                        "kind": str(job.get("kind") or "chat"),
+                        "error": event.get("type") == "error",
+                    })
                 cricut_completion_timer = job.get("cricut_completion_timer")
                 if cricut_completion_timer:
                     cricut_completion_timer.cancel()

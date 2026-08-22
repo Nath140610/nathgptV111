@@ -105,3 +105,13 @@ aussi que le bot générateur est bien celui dont l'ID est
 
 Vérifie que le service utilise le plan Starter et que le disque persistant
 `nathgpt-data` est bien attaché. Ne supprime pas ce disque dans Render.
+
+
+## Conversations persistantes dans Supabase
+
+1. Ouvre Supabase > SQL Editor.
+2. Exécute le fichier `supabase_accounts.sql` mis à jour. Il crée aussi `public.nathgpt_conversations`.
+3. Sur Render, conserve `SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`.
+4. Facultatif : ajoute `SUPABASE_CONVERSATIONS_TABLE=nathgpt_conversations` (c'est déjà la valeur par défaut).
+5. Au prochain démarrage, si la table Supabase est vide, NathGPT migre automatiquement le contenu existant de `data/conversations.json`.
+6. Une copie locale reste utilisée comme secours si Supabase est temporairement inaccessible.

@@ -11,14 +11,17 @@
     <main class="staff-shell">
         <header class="staff-header">
             <div class="staff-brand">
-                <img src="/logo.png" alt="NathGPT">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT">
                 <div>
                     <p>Accès restreint</p>
                     <h1>Panneau staff</h1>
                 </div>
             </div>
-            {% if authenticated and session.get('username') %}
-                <a class="staff-return" href="{{ url_for('chat') }}">Retour au chat</a>
+            {% if authenticated %}
+                <div class="staff-header-actions">
+                    <a class="staff-return" href="{{ url_for('staff_statistics') }}">Statistiques</a>
+                    {% if session.get('username') %}<a class="staff-return" href="{{ url_for('chat') }}">Retour au chat</a>{% endif %}
+                </div>
             {% endif %}
         </header>
 
@@ -99,7 +102,7 @@
 
                         <form method="POST" action="{{ url_for('staff_feature_toggle', feature_key=feature.key) }}" class="staff-feature-form" autocomplete="off">
                             <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
-                            {% if feature.enabled %}
+                            {% if feature.manual_enabled %}
                                 <input type="hidden" name="enabled" value="0">
                                 <label for="featureReason-{{ feature.key }}">Message affiché aux utilisateurs</label>
                                 <input id="featureReason-{{ feature.key }}" name="maintenance_reason" maxlength="180" placeholder="{{ feature.default_reason }}">
@@ -109,6 +112,37 @@
                                 <button type="submit" class="staff-action-good">Réactiver</button>
                             {% endif %}
                         </form>
+
+                        <details class="staff-feature-schedule" {% if feature.scheduled_active or feature.schedule_pending %}open{% endif %}>
+                            <summary>Programmer une maintenance</summary>
+                            {% if feature.scheduled_active %}
+                                <div class="staff-schedule-status is-active">Maintenance programmée en cours</div>
+                            {% elif feature.schedule_pending %}
+                                <div class="staff-schedule-status">Maintenance programmée à venir</div>
+                            {% elif feature.schedule_finished %}
+                                <div class="staff-schedule-status is-finished">Dernière maintenance terminée</div>
+                            {% endif %}
+
+                            <form method="POST" action="{{ url_for('staff_feature_schedule', feature_key=feature.key) }}" class="staff-schedule-form" autocomplete="off">
+                                <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                                <input type="hidden" name="schedule_action" value="save">
+                                <label>Début</label>
+                                <input type="datetime-local" name="scheduled_start" value="{{ feature.scheduled_start_local }}" required>
+                                <label>Fin</label>
+                                <input type="datetime-local" name="scheduled_end" value="{{ feature.scheduled_end_local }}" required>
+                                <label>Message affiché</label>
+                                <input name="scheduled_reason" maxlength="180" value="{{ feature.scheduled_reason }}" placeholder="{{ feature.default_reason }}">
+                                <button type="submit">Enregistrer la programmation</button>
+                            </form>
+
+                            {% if feature.scheduled_start or feature.scheduled_end %}
+                                <form method="POST" action="{{ url_for('staff_feature_schedule', feature_key=feature.key) }}" class="staff-schedule-clear">
+                                    <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                                    <input type="hidden" name="schedule_action" value="clear">
+                                    <button type="submit">Supprimer la programmation</button>
+                                </form>
+                            {% endif %}
+                        </details>
                     </article>
                 {% endfor %}
             </section>
@@ -147,6 +181,42 @@
                         {% endif %}
                     </div>
                 {% endif %}
+            </section>
+
+            <section class="staff-bug-reports" aria-label="Signalements de bugs">
+                <div class="staff-table-title">
+                    <div><p>Qualité</p><h2>Derniers bugs signalés</h2></div>
+                    <span class="staff-privacy">{{ bug_reports|length }} affiché(s)</span>
+                </div>
+                <div class="staff-bug-list">
+                    {% for bug in bug_reports %}
+                        <article class="staff-ticket-card status-{{ bug.status }}">
+                            <div class="staff-ticket-topline">
+                                <div>
+                                    <strong>#{{ bug.id }}</strong>
+                                    <span class="staff-ticket-category">{{ bug.category }}</span>
+                                </div>
+                                <span class="staff-ticket-status status-{{ bug.status }}">{{ bug.status_label }}</span>
+                            </div>
+                            <p>{{ bug.description }}</p>
+                            <small>{{ bug.username }} · {{ bug.created_at }} · {{ bug.device }}{% if bug.conversation_id %} · discussion {{ bug.conversation_id }}{% endif %}</small>
+                            <form class="staff-ticket-actions" method="POST" action="{{ url_for('staff_bug_status', report_id=bug.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                                <label>
+                                    Statut
+                                    <select name="status">
+                                        {% for status_key, status_label in bug_statuses.items() %}
+                                            <option value="{{ status_key }}" {% if bug.status == status_key %}selected{% endif %}>{{ status_label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </label>
+                                <button type="submit">Mettre à jour</button>
+                            </form>
+                        </article>
+                    {% else %}
+                        <div class="staff-empty-bugs">Aucun ticket de bug pour le moment.</div>
+                    {% endfor %}
+                </div>
             </section>
 
             <section class="staff-category-danger" aria-label="Nettoyage global Discord">
@@ -209,6 +279,11 @@
                                     <td>{{ account.last_seen_at }}</td>
                                     <td>{{ account.created_at }}</td>
                                     <td class="staff-actions">
+                                        <form method="POST" action="{{ url_for('staff_impersonate_account', username=account.username) }}">
+                                            <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                                            <button type="submit" class="staff-action-open">Ouvrir ce compte</button>
+                                        </form>
+
                                         {% if account.access_status != 'permanent' %}
                                             <form method="POST" action="{{ url_for('staff_account_action', username=account.username, action='grant-permanent-access') }}">
                                                 <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">

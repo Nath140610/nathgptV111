@@ -28,3 +28,66 @@ for each row execute function public.nathgpt_set_updated_at();
 alter table public.nathgpt_accounts enable row level security;
 revoke all on table public.nathgpt_accounts from anon, authenticated;
 grant select, insert, update, delete on table public.nathgpt_accounts to service_role;
+
+
+-- Historique NathGPT persistant sur Supabase.
+-- Une ligne par utilisateur, avec ses conversations dans un tableau JSONB.
+create table if not exists public.nathgpt_conversations (
+    username text primary key check (char_length(username) between 1 and 80),
+    data jsonb not null default '[]'::jsonb,
+    updated_at timestamptz not null default now()
+);
+
+drop trigger if exists nathgpt_conversations_updated_at on public.nathgpt_conversations;
+create trigger nathgpt_conversations_updated_at
+before update on public.nathgpt_conversations
+for each row execute function public.nathgpt_set_updated_at();
+
+alter table public.nathgpt_conversations enable row level security;
+revoke all on table public.nathgpt_conversations from anon, authenticated;
+grant select, insert, update, delete on table public.nathgpt_conversations to service_role;
+
+-- Signalements de bugs envoyés depuis l'interface NathGPT.
+create table if not exists public.nathgpt_bug_reports (
+    id text primary key,
+    username text not null,
+    category text not null default 'Autre',
+    description text not null,
+    conversation_id text,
+    device text,
+    created_at timestamptz not null default now(),
+    status text not null default 'new'
+);
+alter table public.nathgpt_bug_reports enable row level security;
+revoke all on table public.nathgpt_bug_reports from anon, authenticated;
+grant select, insert, update, delete on table public.nathgpt_bug_reports to service_role;
+
+-- Liens publics temporaires. Le snapshot évite d'exposer de futurs messages ajoutés à la discussion.
+create table if not exists public.nathgpt_conversation_shares (
+    token text primary key,
+    username text not null,
+    conversation_id text not null,
+    title text not null default 'Conversation',
+    snapshot jsonb not null,
+    created_at timestamptz not null default now(),
+    expires_at timestamptz not null
+);
+create index if not exists nathgpt_conversation_shares_expires_at_idx on public.nathgpt_conversation_shares(expires_at);
+alter table public.nathgpt_conversation_shares enable row level security;
+revoke all on table public.nathgpt_conversation_shares from anon, authenticated;
+grant select, insert, update, delete on table public.nathgpt_conversation_shares to service_role;
+
+
+-- Etat persistant de l'application : maintenance manuelle et programmée.
+create table if not exists public.nathgpt_app_state (
+    key text primary key,
+    data jsonb not null default '{}'::jsonb,
+    updated_at timestamptz not null default now()
+);
+drop trigger if exists nathgpt_app_state_updated_at on public.nathgpt_app_state;
+create trigger nathgpt_app_state_updated_at
+before update on public.nathgpt_app_state
+for each row execute function public.nathgpt_set_updated_at();
+alter table public.nathgpt_app_state enable row level security;
+revoke all on table public.nathgpt_app_state from anon, authenticated;
+grant select, insert, update, delete on table public.nathgpt_app_state to service_role;

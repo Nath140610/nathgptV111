@@ -8,7 +8,7 @@
 </head>
 <body class="auth-page register-page">
     <div class="auth-card register-card">
-        <img src="/logo.png" class="auth-logo" alt="Logo NathGPT">
+        <img src="/logo.png?v={{ logo_version }}" class="auth-logo" alt="Logo NathGPT">
         <h1>Créer un compte</h1>
         <p class="subtitle">Bienvenue sur NathGPT</p>
 
@@ -60,6 +60,24 @@
                 autocomplete="new-password"
                 required
             >
+
+            <div class="simple-captcha" aria-label="Vérification anti-robot">
+                <div class="simple-captcha-copy">
+                    <span>Vérification</span>
+                    <strong>Combien font {{ captcha_question }} ?</strong>
+                    <small>Un petit calcul pour vérifier que tu n'es pas un robot.</small>
+                </div>
+                <input
+                    type="number"
+                    inputmode="numeric"
+                    name="captcha_answer"
+                    min="0"
+                    max="30"
+                    placeholder="Réponse"
+                    autocomplete="off"
+                    required
+                >
+            </div>
 
             <button type="submit" class="primary-button">Créer mon compte</button>
         </form>

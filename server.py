@@ -122,6 +122,24 @@ SUPABASE_ACCOUNTS_TABLE = os.environ.get(
     "SUPABASE_ACCOUNTS_TABLE",
     "nathgpt_accounts",
 ).strip() or "nathgpt_accounts"
+SUPABASE_CONVERSATIONS_TABLE = os.environ.get(
+    "SUPABASE_CONVERSATIONS_TABLE",
+    "nathgpt_conversations",
+).strip() or "nathgpt_conversations"
+
+SUPABASE_BUG_REPORTS_TABLE = os.environ.get(
+    "SUPABASE_BUG_REPORTS_TABLE",
+    "nathgpt_bug_reports",
+).strip() or "nathgpt_bug_reports"
+
+SUPABASE_SHARES_TABLE = os.environ.get(
+    "SUPABASE_SHARES_TABLE",
+    "nathgpt_conversation_shares",
+).strip() or "nathgpt_conversation_shares"
+SUPABASE_APP_STATE_TABLE = os.environ.get(
+    "SUPABASE_APP_STATE_TABLE",
+    "nathgpt_app_state",
+).strip() or "nathgpt_app_state"
 
 VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "").strip()
 VAPID_PRIVATE_KEY = os.environ.get("VAPID_PRIVATE_KEY", "").strip()
@@ -139,6 +157,8 @@ AUTOMATIC_GENERATIONS_FILE = DATA_DIR / "automatic_generations.json"
 AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 
 SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
+BUG_REPORTS_FILE = DATA_DIR / "bug_reports.json"
+SHARE_LINKS_FILE = DATA_DIR / "conversation_shares.json"
 
 FEATURE_MAINTENANCE_DEFAULTS = {
     "text_generation": {
@@ -171,14 +191,91 @@ except ZoneInfoNotFoundError:
 AUTOMATION_ENABLED = os.environ.get("AUTOMATION_ENABLED", "true").lower() == "true"
 
 # À modifier avec les notes associées à chaque nouvelle version publiée.
-APP_RELEASE = {
-    "version": "2026.08.22.1",
-    "title": "Mise à jour",
+APP_RELEASES = [
+    {
+        "version": "2026.08.22.1",
+        "date": "2026-08-22T13:50:00+02:00",
+        "title": "Interface et notifications",
+        "additions": [
+            "Nouvel écran d'ouverture",
+            "Notifications sur les réponses NathGPT",
+            "Générations Cricut automatiques et dossiers datés",
+        ],
+    },
+    {
+        "version": "2026.08.22.2",
+        "date": "2026-08-22T16:20:00+02:00",
+        "title": "Persistance et maintenance",
+        "additions": [
+            "Conversations persistantes synchronisées dans Supabase",
+            "Maintenance ciblée : texte, images et Cricut séparément",
+        ],
+    },
+    {
+        "version": "2026.08.22.3",
+        "date": "2026-08-22T18:38:00+02:00",
+        "title": "Historique, partage et outils staff",
+        "additions": [
+            "Historique avancé des générations avec recherche et filtres",
+            "Signalement de bugs depuis le chat",
+            "Partage temporaire d'une conversation par lien public",
+            "Connexion staff temporaire à un compte utilisateur",
+            "Retour haptique sur les appareils compatibles",
+            "Nouvel écran de chargement premium",
+            "Changelog cumulatif depuis la dernière mise à jour consultée",
+        ],
+    },
+    {
+        "version": "2026.08.22.4",
+        "title": "Sécurité et maintenance",
+        "date": "2026-08-22T18:47:00+02:00",
+        "additions": [
+            "Captcha simple à la création de compte",
+            "Maintenance programmable par fonctionnalité depuis le panneau staff",
+            "Planning de maintenance conservé dans Supabase",
+        ],
+    }
+]
+
+APP_RELEASES.append({
+    "version": "2026.08.22.5",
+    "title": "Personnalisation et statistiques",
+    "date": "2026-08-22T18:55:00+02:00",
     "additions": [
-        "Nouvel écran d'ouverture plus sobre",
-        "Notifications sur chaque réponse de NathGPT",
-        "Générations Cricut automatiques et dossiers datés",
+        "Conversations épinglables en haut de l'historique",
+        "Révocation des liens de partage depuis les paramètres",
+        "Mode économie batterie pour réduire les animations",
+        "Page Mes statistiques pour chaque utilisateur",
+        "Page statistiques détaillées réservée au staff",
+        "Nouveaux thèmes : NathGPT, OLED, Océan, Violet et Clair",
     ],
+})
+APP_RELEASES.append({
+    "version": "2026.08.22.6",
+    "title": "Tickets et supervision",
+    "date": "2026-08-22T19:03:00+02:00",
+    "additions": [
+        "Signalements transformés en tickets de bugs avec suivi de statut",
+        "Taille de la file d'attente visible dans les statistiques staff",
+        "Temps moyen des générations affiché dans le panel statistiques",
+        "Compteur d'erreurs système sur les dernières 24 heures",
+    ],
+})
+APP_RELEASE = APP_RELEASES[-1]
+
+BUG_STATUS_LABELS = {
+    "new": "Nouveau",
+    "in_progress": "En cours",
+    "fixed": "Corrigé",
+    "closed": "Fermé",
+}
+
+THEME_OPTIONS = {
+    "nathgpt": {"label": "NathGPT", "color": "#212121"},
+    "oled": {"label": "OLED", "color": "#000000"},
+    "ocean": {"label": "Océan", "color": "#10212a"},
+    "violet": {"label": "Violet", "color": "#211b2d"},
+    "light": {"label": "Clair", "color": "#f5f5f7"},
 }
 
 SECRET_FILE = DATA_DIR / "secret_key.txt"
@@ -228,17 +325,33 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 36 * 1024 * 1024
 
 
+def file_fingerprint(path, fallback="1"):
+    """Empreinte courte basée sur le contenu, idéale pour casser le cache navigateur."""
+    try:
+        digest = hashlib.sha256()
+        with Path(path).open("rb") as handle:
+            for chunk in iter(lambda: handle.read(128 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()[:12]
+    except OSError:
+        return str(fallback)
+
+
+def current_logo_version():
+    return file_fingerprint(BASE_DIR / "logo.png")
+
+
 @app.context_processor
 def inject_asset_version():
-
     try:
-        version = int(
-            (BASE_DIR / "static" / "style.css").stat().st_mtime
-        )
+        version = int((BASE_DIR / "static" / "style.css").stat().st_mtime)
     except OSError:
         version = 1
 
-    return {"asset_version": version}
+    return {
+        "asset_version": version,
+        "logo_version": current_logo_version(),
+    }
 
 
 # ============================================================
@@ -289,6 +402,14 @@ def atomic_write_json(path: Path, data):
 # ============================================================
 
 def supabase_accounts_enabled():
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+
+
+def supabase_conversations_enabled():
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
+
+
+def supabase_app_state_enabled():
     return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
 
 
@@ -369,6 +490,81 @@ def save_supabase_accounts(accounts):
         )
 
 
+def load_supabase_conversations():
+    rows = supabase_request(
+        "GET",
+        f"{SUPABASE_CONVERSATIONS_TABLE}?select=username,data",
+    ) or []
+
+    conversations = {}
+    for row in rows:
+        username = str(row.get("username", "")).strip()
+        items = row.get("data")
+        if username and isinstance(items, list):
+            conversations[username] = items
+    return conversations
+
+
+def save_supabase_conversations(conversations):
+    if not isinstance(conversations, dict):
+        conversations = {}
+
+    rows = [
+        {"username": str(username), "data": items}
+        for username, items in conversations.items()
+        if isinstance(items, list)
+    ]
+
+    existing_rows = supabase_request(
+        "GET",
+        f"{SUPABASE_CONVERSATIONS_TABLE}?select=username",
+    ) or []
+    existing_names = {
+        str(row.get("username", ""))
+        for row in existing_rows
+        if row.get("username")
+    }
+    wanted_names = {row["username"] for row in rows}
+
+    if rows:
+        supabase_request(
+            "POST",
+            f"{SUPABASE_CONVERSATIONS_TABLE}?on_conflict=username",
+            rows,
+            {"Prefer": "resolution=merge-duplicates,return=minimal"},
+        )
+
+    for username in existing_names - wanted_names:
+        supabase_request(
+            "DELETE",
+            f"{SUPABASE_CONVERSATIONS_TABLE}?username=eq.{quote(username, safe='')}",
+            extra_headers={"Prefer": "return=minimal"},
+        )
+
+
+
+def load_supabase_app_state():
+    rows = supabase_request(
+        "GET",
+        f"{SUPABASE_APP_STATE_TABLE}?key=eq.service_status&select=data&limit=1",
+    ) or []
+    if not rows:
+        return {}
+    data = rows[0].get("data")
+    return data if isinstance(data, dict) else {}
+
+
+def save_supabase_app_state(state):
+    if not isinstance(state, dict):
+        state = {}
+    supabase_request(
+        "POST",
+        f"{SUPABASE_APP_STATE_TABLE}?on_conflict=key",
+        [{"key": "service_status", "data": state}],
+        {"Prefer": "resolution=merge-duplicates,return=minimal"},
+    )
+
+
 def load_local_json(path: Path, default):
     if not path.exists():
         atomic_write_json(path, default)
@@ -395,7 +591,33 @@ def load_json(path: Path, default):
                         return local_accounts
                 return accounts
             except RuntimeError:
-                print("Supabase indisponible : utilisation temporaire de la sauvegarde locale.")
+                print("Supabase comptes indisponible : utilisation temporaire de la sauvegarde locale.")
+
+        if path == CONVERSATIONS_FILE and supabase_conversations_enabled():
+            try:
+                conversations = load_supabase_conversations()
+                # Migration automatique de l'historique local vers Supabase.
+                # Elle ne se déclenche que si la table Supabase est vide.
+                if not conversations:
+                    local_conversations = load_local_json(path, default)
+                    if local_conversations:
+                        save_supabase_conversations(local_conversations)
+                        return local_conversations
+                return conversations
+            except RuntimeError:
+                print("Supabase conversations indisponible : utilisation temporaire de la sauvegarde locale.")
+
+        if path == SERVICE_STATUS_FILE and supabase_app_state_enabled():
+            try:
+                remote_state = load_supabase_app_state()
+                if remote_state:
+                    return remote_state
+                local_state = load_local_json(path, default)
+                if local_state:
+                    save_supabase_app_state(local_state)
+                return local_state
+            except RuntimeError:
+                print("Supabase état application indisponible : utilisation temporaire de la sauvegarde locale.")
 
         return load_local_json(path, default)
 
@@ -411,7 +633,22 @@ def save_json(path: Path, data):
             try:
                 save_supabase_accounts(data)
             except RuntimeError:
-                print("Écriture Supabase impossible : sauvegarde locale conservée.")
+                print("Écriture Supabase comptes impossible : sauvegarde locale conservée.")
+
+        if path == CONVERSATIONS_FILE and supabase_conversations_enabled():
+            try:
+                save_supabase_conversations(data)
+            except RuntimeError:
+                print("Écriture Supabase conversations impossible : sauvegarde locale conservée.")
+
+        if path == SERVICE_STATUS_FILE and supabase_app_state_enabled():
+            try:
+                save_supabase_app_state(data)
+            except RuntimeError:
+                print("Écriture Supabase état application impossible : sauvegarde locale conservée.")
+
+        # Une copie locale reste conservée comme cache/fallback. Supabase est
+        # la source persistante principale lorsque les variables sont configurées.
         atomic_write_json(
             path,
             data
@@ -508,9 +745,22 @@ def get_conversation_summaries(username):
         {}
     )
 
-    items = conversations.get(
+    owner = next(
+        (key for key in conversations if key.casefold() == username.casefold()),
         username,
-        []
+    )
+    items = conversations.get(owner, [])
+    if not isinstance(items, list):
+        items = []
+
+    ordered = sorted(
+        items,
+        key=lambda item: (
+            1 if item.get("pinned") else 0,
+            str(item.get("pinned_at") or item.get("updated_at") or ""),
+            str(item.get("updated_at") or ""),
+        ),
+        reverse=True,
     )
 
     return [
@@ -518,8 +768,9 @@ def get_conversation_summaries(username):
             "id": item.get("id"),
             "title": item.get("title", "Nouvelle discussion"),
             "updated_at": item.get("updated_at"),
+            "pinned": bool(item.get("pinned")),
         }
-        for item in reversed(items)
+        for item in ordered
     ]
 
 
@@ -535,6 +786,511 @@ def get_conversation(username, conversation_id):
             return item
 
     return None
+
+
+def get_pending_releases(user_details):
+    seen_version = str((user_details or {}).get("changelog_seen_version") or "").strip()
+    if not seen_version:
+        return APP_RELEASES
+
+    seen_index = next(
+        (index for index, release in enumerate(APP_RELEASES) if release.get("version") == seen_version),
+        -1,
+    )
+    if seen_index < 0:
+        return APP_RELEASES
+    return APP_RELEASES[seen_index + 1:]
+
+
+def flatten_generation_history(username):
+    conversations = load_json(CONVERSATIONS_FILE, {})
+    owner = next((key for key in conversations if key.casefold() == username.casefold()), username)
+    history = []
+    for conversation in conversations.get(owner, []):
+        conversation_id = str(conversation.get("id") or "")
+        title = str(conversation.get("title") or "Nouvelle discussion")
+        messages = conversation.get("messages", []) if isinstance(conversation, dict) else []
+        last_prompt = ""
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if message.get("role") == "user":
+                last_prompt = str(message.get("content") or "")[:300]
+                continue
+            image_url = str(message.get("image_url") or "").strip()
+            if image_url:
+                history.append({
+                    "id": f"{conversation_id}-{len(history)}",
+                    "type": "image",
+                    "conversation_id": conversation_id,
+                    "conversation_title": title,
+                    "prompt": last_prompt,
+                    "created_at": message.get("created_at"),
+                    "image_url": image_url,
+                })
+            for image in message.get("cricut_images", []) or []:
+                if str(image).strip():
+                    history.append({
+                        "id": f"{conversation_id}-cricut-{len(history)}",
+                        "type": "cricut",
+                        "conversation_id": conversation_id,
+                        "conversation_title": title,
+                        "prompt": last_prompt or "Adaptation Cricut",
+                        "created_at": message.get("created_at"),
+                        "image_url": str(image),
+                    })
+    history.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return history[:500]
+
+
+def _decorate_bug_report(report):
+    item = dict(report or {})
+    status = str(item.get("status") or "new")
+    if status not in BUG_STATUS_LABELS:
+        status = "new"
+    item["status"] = status
+    item["status_label"] = BUG_STATUS_LABELS[status]
+    return item
+
+
+def get_staff_bug_reports(limit=50):
+    reports = []
+    if supabase_accounts_enabled():
+        try:
+            rows = supabase_request(
+                "GET",
+                f"{SUPABASE_BUG_REPORTS_TABLE}?select=id,username,category,description,conversation_id,device,created_at,status&order=created_at.desc&limit={int(limit)}",
+            ) or []
+            reports = [_decorate_bug_report(row) for row in rows if isinstance(row, dict)]
+        except RuntimeError:
+            reports = []
+    if not reports:
+        local_reports = load_local_json(BUG_REPORTS_FILE, [])
+        if isinstance(local_reports, list):
+            reports = [
+                _decorate_bug_report(item)
+                for item in reversed(local_reports)
+                if isinstance(item, dict)
+            ][:limit]
+    return reports
+
+
+def get_user_bug_reports(username, limit=50):
+    reports = []
+    if supabase_accounts_enabled():
+        try:
+            rows = supabase_request(
+                "GET",
+                (
+                    f"{SUPABASE_BUG_REPORTS_TABLE}"
+                    f"?username=eq.{quote(username, safe='')}"
+                    "&select=id,username,category,description,conversation_id,device,created_at,status"
+                    f"&order=created_at.desc&limit={int(limit)}"
+                ),
+            ) or []
+            reports = [_decorate_bug_report(row) for row in rows if isinstance(row, dict)]
+        except RuntimeError:
+            reports = []
+
+    if not reports:
+        local_reports = load_local_json(BUG_REPORTS_FILE, [])
+        if isinstance(local_reports, list):
+            reports = [
+                _decorate_bug_report(item)
+                for item in reversed(local_reports)
+                if isinstance(item, dict)
+                and str(item.get("username") or "").casefold() == username.casefold()
+            ][:limit]
+    return reports
+
+
+def _new_bug_ticket_id():
+    local_day = datetime.now(AUTOMATION_TIMEZONE).strftime("%y%m%d")
+    return f"BUG-{local_day}-{secrets.token_hex(2).upper()}"
+
+
+def save_bug_report(username, category, description, conversation_id=""):
+    report = {
+        "id": _new_bug_ticket_id(),
+        "username": username,
+        "category": str(category or "Autre")[:60],
+        "description": str(description or "").strip()[:2000],
+        "conversation_id": str(conversation_id or "")[:100],
+        "device": request_device_label(),
+        "created_at": utc_now(),
+        "status": "new",
+    }
+    if supabase_accounts_enabled():
+        try:
+            supabase_request(
+                "POST",
+                SUPABASE_BUG_REPORTS_TABLE,
+                report,
+                {"Prefer": "return=minimal"},
+            )
+            return _decorate_bug_report(report)
+        except RuntimeError:
+            pass
+
+    reports = load_local_json(BUG_REPORTS_FILE, [])
+    if not isinstance(reports, list):
+        reports = []
+    reports.append(report)
+    atomic_write_json(BUG_REPORTS_FILE, reports[-1000:])
+    return _decorate_bug_report(report)
+
+
+def update_bug_report_status(report_id, status):
+    status = str(status or "").strip()
+    if status not in BUG_STATUS_LABELS:
+        raise ValueError("Statut de ticket invalide.")
+
+    updated = False
+    if supabase_accounts_enabled():
+        try:
+            result = supabase_request(
+                "PATCH",
+                (
+                    f"{SUPABASE_BUG_REPORTS_TABLE}"
+                    f"?id=eq.{quote(str(report_id), safe='')}"
+                ),
+                {"status": status},
+                {"Prefer": "return=representation"},
+            ) or []
+            updated = bool(result)
+        except RuntimeError:
+            pass
+
+    local_reports = load_local_json(BUG_REPORTS_FILE, [])
+    if isinstance(local_reports, list):
+        local_changed = False
+        for item in local_reports:
+            if isinstance(item, dict) and str(item.get("id")) == str(report_id):
+                item["status"] = status
+                local_changed = True
+                updated = True
+                break
+        if local_changed:
+            atomic_write_json(BUG_REPORTS_FILE, local_reports[-1000:])
+
+    return updated
+
+
+
+def create_conversation_share(username, conversation, hours=24):
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    expires_at = (now + timedelta(hours=hours)).isoformat()
+    record = {
+        "token": token,
+        "username": username,
+        "conversation_id": str(conversation.get("id") or "")[:100],
+        "title": str(conversation.get("title") or "Conversation")[:120],
+        "snapshot": conversation,
+        "created_at": now.isoformat(),
+        "expires_at": expires_at,
+    }
+    if supabase_accounts_enabled():
+        try:
+            supabase_request(
+                "POST",
+                SUPABASE_SHARES_TABLE,
+                record,
+                {"Prefer": "return=minimal"},
+            )
+            return record
+        except RuntimeError:
+            pass
+    shares = load_local_json(SHARE_LINKS_FILE, {})
+    if not isinstance(shares, dict):
+        shares = {}
+    shares[token] = record
+    atomic_write_json(SHARE_LINKS_FILE, shares)
+    return record
+
+
+def get_conversation_share(token):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{30,80}", str(token or "")):
+        return None
+    record = None
+    if supabase_accounts_enabled():
+        try:
+            rows = supabase_request(
+                "GET",
+                f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&select=token,username,conversation_id,title,snapshot,created_at,expires_at&limit=1",
+            ) or []
+            if rows:
+                record = rows[0]
+        except RuntimeError:
+            pass
+    if record is None:
+        shares = load_local_json(SHARE_LINKS_FILE, {})
+        if isinstance(shares, dict):
+            record = shares.get(token)
+    if not isinstance(record, dict):
+        return None
+    try:
+        expires = datetime.fromisoformat(str(record.get("expires_at") or ""))
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if expires <= datetime.now(timezone.utc):
+            return None
+    except (TypeError, ValueError):
+        return None
+    return record
+
+
+
+def list_conversation_shares(username, include_expired=False):
+    records = []
+    if supabase_accounts_enabled():
+        try:
+            rows = supabase_request(
+                "GET",
+                f"{SUPABASE_SHARES_TABLE}?username=eq.{quote(username, safe='')}&select=token,conversation_id,title,created_at,expires_at&order=created_at.desc",
+            ) or []
+            records = [row for row in rows if isinstance(row, dict)]
+        except RuntimeError:
+            pass
+
+    if not records:
+        shares = load_local_json(SHARE_LINKS_FILE, {})
+        if isinstance(shares, dict):
+            records = [
+                item for item in shares.values()
+                if isinstance(item, dict) and str(item.get("username", "")).casefold() == username.casefold()
+            ]
+            records.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+
+    now = datetime.now(timezone.utc)
+    output = []
+    for record in records:
+        expired = False
+        try:
+            expires = datetime.fromisoformat(str(record.get("expires_at") or ""))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            expired = expires <= now
+        except (TypeError, ValueError):
+            expired = True
+        if expired and not include_expired:
+            continue
+        clean = dict(record)
+        clean["expired"] = expired
+        output.append(clean)
+    return output
+
+
+def revoke_conversation_share(username, token):
+    if not re.fullmatch(r"[A-Za-z0-9_-]{30,80}", str(token or "")):
+        return False
+
+    removed = False
+    if supabase_accounts_enabled():
+        try:
+            rows = supabase_request(
+                "GET",
+                f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&username=eq.{quote(username, safe='')}&select=token&limit=1",
+            ) or []
+            if rows:
+                supabase_request(
+                    "DELETE",
+                    f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&username=eq.{quote(username, safe='')}",
+                    extra_headers={"Prefer": "return=minimal"},
+                )
+                removed = True
+        except RuntimeError:
+            pass
+
+    shares = load_local_json(SHARE_LINKS_FILE, {})
+    if isinstance(shares, dict):
+        record = shares.get(token)
+        if isinstance(record, dict) and str(record.get("username", "")).casefold() == username.casefold():
+            shares.pop(token, None)
+            atomic_write_json(SHARE_LINKS_FILE, shares)
+            removed = True
+    return removed
+
+
+def user_statistics(username):
+    conversations = load_json(CONVERSATIONS_FILE, {})
+    owner = next((key for key in conversations if key.casefold() == username.casefold()), username)
+    items = conversations.get(owner, [])
+    if not isinstance(items, list):
+        items = []
+
+    stats = {
+        "conversations": len(items),
+        "pinned": sum(1 for item in items if isinstance(item, dict) and item.get("pinned")),
+        "messages": 0,
+        "questions": 0,
+        "answers": 0,
+        "images": 0,
+        "cricut_images": 0,
+        "first_message_at": None,
+        "last_message_at": None,
+    }
+    dates = []
+    for conversation in items:
+        if not isinstance(conversation, dict):
+            continue
+        for message in conversation.get("messages", []) or []:
+            if not isinstance(message, dict):
+                continue
+            stats["messages"] += 1
+            if message.get("role") == "user":
+                stats["questions"] += 1
+            elif message.get("role") == "assistant":
+                stats["answers"] += 1
+            if message.get("image_url"):
+                stats["images"] += 1
+            stats["cricut_images"] += len(message.get("cricut_images", []) or [])
+            created_at = str(message.get("created_at") or "")
+            if created_at:
+                dates.append(created_at)
+    if dates:
+        dates.sort()
+        stats["first_message_at"] = dates[0]
+        stats["last_message_at"] = dates[-1]
+    stats["total_generations"] = stats["images"] + stats["cricut_images"]
+    stats["active_shares"] = len(list_conversation_shares(username))
+    return stats
+
+
+def _average_generation_seconds_from_conversations(conversations, sample_limit=250):
+    durations = []
+    for items in conversations.values():
+        if not isinstance(items, list):
+            continue
+        for conversation in items:
+            if not isinstance(conversation, dict):
+                continue
+            pending_user_at = None
+            for message in conversation.get("messages", []) or []:
+                if not isinstance(message, dict):
+                    continue
+                created = _parse_iso_datetime(message.get("created_at"))
+                if not created:
+                    continue
+                role = message.get("role")
+                if role == "user":
+                    pending_user_at = created
+                    continue
+                if role == "assistant" and pending_user_at:
+                    seconds = (created - pending_user_at).total_seconds()
+                    if 0 <= seconds <= 2 * 60 * 60:
+                        durations.append((created, seconds))
+                    pending_user_at = None
+
+    durations.sort(key=lambda item: item[0], reverse=True)
+    values = [seconds for _, seconds in durations[:max(1, int(sample_limit))]]
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
+
+
+def _format_duration_short(seconds):
+    seconds = max(0, int(round(float(seconds or 0))))
+    if not seconds:
+        return "—"
+    if seconds < 60:
+        return f"{seconds} s"
+    minutes, remainder = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes} min {remainder:02d} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d}"
+
+
+def build_staff_statistics():
+    users = load_json(USERS_FILE, {})
+    conversations = load_json(CONVERSATIONS_FILE, {})
+    now = datetime.now(timezone.utc)
+    day_keys = [(now - timedelta(days=offset)).date().isoformat() for offset in range(13, -1, -1)]
+    daily = {key: {"date": key, "questions": 0, "answers": 0, "images": 0, "cricut": 0} for key in day_keys}
+    top_users = []
+    total_questions = total_answers = total_images = total_cricut = 0
+
+    for username, items in conversations.items():
+        if not isinstance(items, list):
+            continue
+        user_message_count = 0
+        user_generations = 0
+        for conversation in items:
+            if not isinstance(conversation, dict):
+                continue
+            for message in conversation.get("messages", []) or []:
+                if not isinstance(message, dict):
+                    continue
+                role = message.get("role")
+                if role == "user":
+                    total_questions += 1
+                    user_message_count += 1
+                elif role == "assistant":
+                    total_answers += 1
+                image_count = 1 if message.get("image_url") else 0
+                cricut_count = len(message.get("cricut_images", []) or [])
+                total_images += image_count
+                total_cricut += cricut_count
+                user_generations += image_count + cricut_count
+
+                date_key = ""
+                try:
+                    created = datetime.fromisoformat(str(message.get("created_at") or ""))
+                    if created.tzinfo is None:
+                        created = created.replace(tzinfo=timezone.utc)
+                    date_key = created.astimezone(AUTOMATION_TIMEZONE).date().isoformat()
+                except (TypeError, ValueError):
+                    pass
+                if date_key in daily:
+                    if role == "user":
+                        daily[date_key]["questions"] += 1
+                    elif role == "assistant":
+                        daily[date_key]["answers"] += 1
+                    daily[date_key]["images"] += image_count
+                    daily[date_key]["cricut"] += cricut_count
+        top_users.append({
+            "username": username,
+            "questions": user_message_count,
+            "generations": user_generations,
+            "conversations": len(items),
+        })
+
+    top_users.sort(key=lambda item: (item["questions"], item["generations"]), reverse=True)
+    active_24h = 0
+    for details in users.values():
+        if not isinstance(details, dict):
+            continue
+        last_seen = details.get("last_seen_at") or details.get("last_login_at")
+        if not last_seen:
+            continue
+        try:
+            seen = datetime.fromisoformat(str(last_seen))
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            if (now - seen.astimezone(timezone.utc)).total_seconds() <= 86400:
+                active_24h += 1
+        except (TypeError, ValueError):
+            pass
+
+    runtime = discord_bridge.runtime_metrics()
+    average_generation_seconds = _average_generation_seconds_from_conversations(conversations)
+    return {
+        "accounts": len(users),
+        "active_24h": active_24h,
+        "conversations": sum(len(items) for items in conversations.values() if isinstance(items, list)),
+        "questions": total_questions,
+        "answers": total_answers,
+        "images": total_images,
+        "cricut": total_cricut,
+        "queue_waiting": int(runtime.get("queue_waiting", 0) or 0),
+        "active_jobs": int(runtime.get("active_jobs", 0) or 0),
+        "average_generation_seconds": average_generation_seconds,
+        "average_generation_label": _format_duration_short(average_generation_seconds),
+        "recent_errors_24h": count_recent_runtime_errors(24),
+        "daily": [daily[key] for key in day_keys],
+        "top_users": top_users[:12],
+    }
 
 
 def delete_conversation(username, conversation_id):
@@ -768,6 +1524,25 @@ def get_reference_images():
     return result
 
 
+def _parse_iso_datetime(value):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _maintenance_datetime_local(value):
+    parsed = _parse_iso_datetime(value)
+    if not parsed:
+        return ""
+    return parsed.astimezone(AUTOMATION_TIMEZONE).strftime("%Y-%m-%dT%H:%M")
+
+
 def get_feature_maintenance_state():
     state = load_json(SERVICE_STATUS_FILE, {})
     if not isinstance(state, dict):
@@ -777,29 +1552,58 @@ def get_feature_maintenance_state():
     if not isinstance(raw_features, dict):
         raw_features = {}
 
+    now = datetime.now(timezone.utc)
     features = {}
     for key, meta in FEATURE_MAINTENANCE_DEFAULTS.items():
         raw_feature = raw_features.get(key, {})
         if not isinstance(raw_feature, dict):
             raw_feature = {}
 
-        enabled = raw_feature.get("enabled")
-        if enabled is None:
-            enabled = True
+        manual_enabled = raw_feature.get("enabled")
+        if manual_enabled is None:
+            manual_enabled = True
+
+        scheduled_start = _parse_iso_datetime(raw_feature.get("scheduled_start"))
+        scheduled_end = _parse_iso_datetime(raw_feature.get("scheduled_end"))
+        scheduled_active = bool(
+            scheduled_start
+            and scheduled_end
+            and scheduled_start <= now < scheduled_end
+        )
+        schedule_pending = bool(scheduled_start and scheduled_end and now < scheduled_start)
+        schedule_finished = bool(scheduled_end and now >= scheduled_end)
+        enabled = bool(manual_enabled) and not scheduled_active
+
+        manual_reason = str(raw_feature.get("maintenance_reason") or "").strip()
+        scheduled_reason = str(raw_feature.get("scheduled_reason") or "").strip()
+        active_reason = (
+            scheduled_reason or meta["default_reason"]
+            if scheduled_active
+            else manual_reason
+        )
 
         features[key] = {
             "key": key,
             "label": meta["label"],
             "description": meta["description"],
-            "enabled": bool(enabled),
-            "maintenance_reason": str(raw_feature.get("maintenance_reason") or "").strip(),
+            "enabled": enabled,
+            "manual_enabled": bool(manual_enabled),
+            "maintenance_reason": active_reason,
+            "manual_maintenance_reason": manual_reason,
             "default_reason": meta["default_reason"],
             "updated_at": raw_feature.get("updated_at") or None,
             "updated_by": raw_feature.get("updated_by") or None,
+            "scheduled_start": scheduled_start.isoformat() if scheduled_start else None,
+            "scheduled_end": scheduled_end.isoformat() if scheduled_end else None,
+            "scheduled_start_local": _maintenance_datetime_local(scheduled_start.isoformat()) if scheduled_start else "",
+            "scheduled_end_local": _maintenance_datetime_local(scheduled_end.isoformat()) if scheduled_end else "",
+            "scheduled_reason": scheduled_reason,
+            "scheduled_active": scheduled_active,
+            "schedule_pending": schedule_pending,
+            "schedule_finished": schedule_finished,
         }
 
     return features
-
 
 def is_feature_enabled(feature_key):
     feature = get_feature_maintenance_state().get(feature_key)
@@ -843,6 +1647,52 @@ def set_feature_enabled(feature_key, enabled, reason="", updated_by="staff"):
     return get_feature_maintenance_state()[feature_key]
 
 
+def set_feature_schedule(feature_key, start_local, end_local, reason="", updated_by="staff"):
+    if feature_key not in FEATURE_MAINTENANCE_DEFAULTS:
+        raise KeyError(feature_key)
+
+    try:
+        start_dt = datetime.strptime(start_local, "%Y-%m-%dT%H:%M").replace(tzinfo=AUTOMATION_TIMEZONE)
+        end_dt = datetime.strptime(end_local, "%Y-%m-%dT%H:%M").replace(tzinfo=AUTOMATION_TIMEZONE)
+    except (TypeError, ValueError) as error:
+        raise ValueError("Dates de maintenance invalides.") from error
+
+    if end_dt <= start_dt:
+        raise ValueError("La fin de maintenance doit être après le début.")
+
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+    features = state.setdefault("features", {})
+    feature_state = features.setdefault(feature_key, {})
+    feature_state["scheduled_start"] = start_dt.astimezone(timezone.utc).isoformat()
+    feature_state["scheduled_end"] = end_dt.astimezone(timezone.utc).isoformat()
+    feature_state["scheduled_reason"] = (
+        " ".join(str(reason or "").split())[:180]
+        or FEATURE_MAINTENANCE_DEFAULTS[feature_key]["default_reason"]
+    )
+    feature_state["updated_at"] = utc_now()
+    feature_state["updated_by"] = str(updated_by or "staff")[:60]
+    save_json(SERVICE_STATUS_FILE, state)
+    return get_feature_maintenance_state()[feature_key]
+
+
+def clear_feature_schedule(feature_key, updated_by="staff"):
+    if feature_key not in FEATURE_MAINTENANCE_DEFAULTS:
+        raise KeyError(feature_key)
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        state = {}
+    features = state.setdefault("features", {})
+    feature_state = features.setdefault(feature_key, {})
+    for field in ("scheduled_start", "scheduled_end", "scheduled_reason"):
+        feature_state.pop(field, None)
+    feature_state["updated_at"] = utc_now()
+    feature_state["updated_by"] = str(updated_by or "staff")[:60]
+    save_json(SERVICE_STATUS_FILE, state)
+    return get_feature_maintenance_state()[feature_key]
+
+
 def feature_maintenance_response(feature_key, status_code=503):
     feature = get_feature_maintenance_state().get(feature_key)
     if not feature:
@@ -855,6 +1705,60 @@ def feature_maintenance_response(feature_key, status_code=503):
         "error": message,
         "feature_maintenance": feature,
     }), status_code
+
+
+def _append_runtime_error_event(state, error_code, source="service"):
+    events = state.get("recent_errors")
+    if not isinstance(events, list):
+        events = []
+
+    now = datetime.now(timezone.utc)
+    code = str(error_code or "API-503")[:80]
+    should_append = True
+    if events:
+        last = events[-1] if isinstance(events[-1], dict) else {}
+        last_at = _parse_iso_datetime(last.get("created_at"))
+        if (
+            str(last.get("code") or "") == code
+            and last_at
+            and (now - last_at).total_seconds() < 10
+        ):
+            should_append = False
+
+    if should_append:
+        events.append({
+            "created_at": now.isoformat(),
+            "code": code,
+            "source": str(source or "service")[:60],
+        })
+
+    cutoff = now - timedelta(days=7)
+    kept = []
+    for item in events[-400:]:
+        if not isinstance(item, dict):
+            continue
+        created = _parse_iso_datetime(item.get("created_at"))
+        if created and created >= cutoff:
+            kept.append(item)
+    state["recent_errors"] = kept[-250:]
+
+
+def count_recent_runtime_errors(hours=24):
+    state = load_json(SERVICE_STATUS_FILE, {})
+    if not isinstance(state, dict):
+        return 0
+    events = state.get("recent_errors")
+    if not isinstance(events, list):
+        return 0
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=max(1, int(hours)))
+    count = 0
+    for item in events:
+        if not isinstance(item, dict):
+            continue
+        created = _parse_iso_datetime(item.get("created_at"))
+        if created and created >= cutoff:
+            count += 1
+    return count
 
 
 def get_service_status():
@@ -891,6 +1795,7 @@ def set_service_outage(error_code="API-503"):
         state.pop("staff_notified_at", None)
     state["outage"] = True
     state["error_code"] = str(error_code or "API-503")[:40]
+    _append_runtime_error_event(state, state["error_code"], source="generation")
     save_json(SERVICE_STATUS_FILE, state)
     return get_service_status()
 
@@ -1889,6 +2794,8 @@ def render_staff_dashboard(
         staff_csrf_token=get_staff_csrf_token(),
         discord_category_id=discord_bridge.category_id,
         feature_states=list(get_feature_maintenance_state().values()),
+        bug_reports=get_staff_bug_reports(),
+        bug_statuses=BUG_STATUS_LABELS,
         temporary_password=temporary_password,
         temporary_username=temporary_username,
         notification_report=notification_report,
@@ -2270,11 +3177,20 @@ def automatic_login():
 
 @app.route("/logo.png")
 def logo():
+    response = send_from_directory(BASE_DIR, "logo.png", mimetype="image/png")
+    # Le paramètre ?v=<empreinte> rend chaque nouveau logo unique.
+    # On peut donc le mettre longtemps en cache sans conserver une ancienne version.
+    response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
-    return send_from_directory(
-        BASE_DIR,
-        "logo.png"
-    )
+
+@app.route("/api/logo-version")
+def logo_version_api():
+    """Permet au front/PWA de détecter automatiquement un logo remplacé."""
+    return jsonify({
+        "version": current_logo_version(),
+        "url": f"/logo.png?v={current_logo_version()}",
+    })
 
 
 @app.route("/favicon.ico")
@@ -2287,16 +3203,43 @@ def favicon():
     )
 
 
+@app.route("/manifest.webmanifest")
+def dynamic_manifest():
+    """Manifest PWA dont l'icône suit automatiquement le contenu de logo.png."""
+    version = current_logo_version()
+    manifest = {
+        "name": "NathGPT",
+        "short_name": "NathGPT",
+        "description": "Création d'images et adaptation de stickers avec NathGPT.",
+        "lang": "fr",
+        "start_url": "/?source=pwa",
+        "scope": "/",
+        "display": "standalone",
+        "background_color": "#1c2422",
+        "theme_color": "#1c2422",
+        "icons": [{
+            "src": f"/logo.png?v={version}",
+            "sizes": "800x800",
+            "type": "image/png",
+            "purpose": "any maskable",
+        }],
+    }
+    response = jsonify(manifest)
+    response.headers["Content-Type"] = "application/manifest+json"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 @app.route("/service-worker.js")
 def service_worker():
-    """Expose le worker à la racine afin qu'il contrôle toute la PWA."""
-    response = send_from_directory(
-        BASE_DIR / "static",
-        "service-worker.js",
-        mimetype="application/javascript",
-    )
+    """Worker dynamique : changer logo.png suffit à changer sa version et son cache."""
+    version = current_logo_version()
+    source = (BASE_DIR / "static" / "service-worker.js").read_text(encoding="utf-8")
+    source = source.replace("__LOGO_VERSION__", version)
+    response = make_response(source)
+    response.headers["Content-Type"] = "application/javascript; charset=utf-8"
     response.headers["Service-Worker-Allowed"] = "/"
-    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
 
 
@@ -2433,6 +3376,22 @@ def home():
 
 
 # ============================================================
+# CAPTCHA SIMPLE D'INSCRIPTION
+# ============================================================
+
+def new_registration_captcha():
+    left = secrets.randbelow(8) + 2
+    right = secrets.randbelow(8) + 1
+    session["registration_captcha_answer"] = str(left + right)
+    session["registration_captcha_question"] = f"{left} + {right}"
+    return session["registration_captcha_question"]
+
+
+def registration_captcha_question():
+    return session.get("registration_captcha_question") or new_registration_captcha()
+
+
+# ============================================================
 # REGISTER
 # ============================================================
 
@@ -2473,6 +3432,17 @@ def register():
             ""
         )
 
+        captcha_answer = str(request.form.get("captcha_answer", "")).strip()
+        expected_captcha = str(session.get("registration_captcha_answer", ""))
+        if not expected_captcha or not secrets.compare_digest(captcha_answer, expected_captcha):
+            flash("Captcha incorrect. Résous le nouveau calcul pour continuer.", "error")
+            new_registration_captcha()
+            return render_template("register.html", captcha_question=registration_captcha_question())
+
+        # Un captcha validé ne peut pas être réutilisé lors d'une seconde requête.
+        session.pop("registration_captcha_answer", None)
+        session.pop("registration_captcha_question", None)
+
 
         # Validation pseudo
 
@@ -2490,8 +3460,10 @@ def register():
             )
 
 
+            new_registration_captcha()
             return render_template(
-                "register.html"
+                "register.html",
+                captcha_question=registration_captcha_question(),
             )
 
 
@@ -2508,8 +3480,10 @@ def register():
             )
 
 
+            new_registration_captcha()
             return render_template(
-                "register.html"
+                "register.html",
+                captcha_question=registration_captcha_question(),
             )
 
 
@@ -2526,8 +3500,10 @@ def register():
             )
 
 
+            new_registration_captcha()
             return render_template(
-                "register.html"
+                "register.html",
+                captcha_question=registration_captcha_question(),
             )
 
 
@@ -2550,8 +3526,10 @@ def register():
             )
 
 
+            new_registration_captcha()
             return render_template(
-                "register.html"
+                "register.html",
+                captcha_question=registration_captcha_question(),
             )
 
 
@@ -2639,8 +3617,10 @@ def register():
         )
 
 
+    new_registration_captcha()
     return render_template(
-        "register.html"
+        "register.html",
+        captcha_question=registration_captcha_question(),
     )
 
 
@@ -2815,7 +3795,12 @@ def chat():
         username=username,
         cricut_enabled=bool(user_key and users[user_key].get("cricut_enabled")),
         app_release=APP_RELEASE,
+        pending_releases=get_pending_releases(users.get(user_key, {}) if user_key else {}),
+        staff_impersonating=bool(session.get("staff_impersonating")),
         registration_notice=session.pop("registration_notice", None),
+        user_theme=(users.get(user_key, {}).get("theme") if user_key else None) or "nathgpt",
+        theme_color=THEME_OPTIONS.get((users.get(user_key, {}).get("theme") if user_key else None) or "nathgpt", THEME_OPTIONS["nathgpt"])["color"],
+        battery_saver=bool(user_key and users[user_key].get("battery_saver")),
 
     )
 
@@ -2841,6 +3826,75 @@ def settings():
         username=user_key,
         account=users[user_key],
         settings_csrf_token=get_settings_csrf_token(),
+        theme_options=THEME_OPTIONS,
+        active_shares=list_conversation_shares(user_key),
+        user_theme=users[user_key].get("theme") or "nathgpt",
+        theme_color=THEME_OPTIONS.get(users[user_key].get("theme") or "nathgpt", THEME_OPTIONS["nathgpt"])["color"],
+        battery_saver=bool(users[user_key].get("battery_saver")),
+    )
+
+
+@app.route("/settings/preferences", methods=["POST"])
+def update_preferences():
+    username = session.get("username")
+    if not username:
+        return redirect(url_for("login"))
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("settings_csrf_token", "")):
+        return "Requête invalide.", 400
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        session.clear()
+        return redirect(url_for("login"))
+
+    theme = str(request.form.get("theme") or "nathgpt").strip().lower()
+    if theme not in THEME_OPTIONS:
+        theme = "nathgpt"
+    users[user_key]["theme"] = theme
+    users[user_key]["battery_saver"] = request.form.get("battery_saver") == "1"
+    users[user_key]["preferences_updated_at"] = utc_now()
+    save_json(USERS_FILE, users)
+    flash("Préférences enregistrées.", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/shares/<token>/revoke", methods=["POST"])
+def revoke_share(token):
+    username = session.get("username")
+    if not username:
+        return redirect(url_for("login"))
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("settings_csrf_token", "")):
+        return "Requête invalide.", 400
+    if revoke_conversation_share(username, token):
+        flash("Lien de partage révoqué. Il n'est plus accessible.", "success")
+    else:
+        flash("Ce lien est déjà expiré ou introuvable.", "error")
+    return redirect(url_for("settings"))
+
+
+@app.route("/stats")
+def my_statistics():
+    username = session.get("username")
+    if not username:
+        return redirect(url_for("login"))
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        session.clear()
+        return redirect(url_for("login"))
+    theme = users[user_key].get("theme") or "nathgpt"
+    return render_template(
+        "stats.html",
+        username=user_key,
+        stats=user_statistics(user_key),
+        account=users[user_key],
+        user_theme=theme,
+        theme_color=THEME_OPTIONS.get(theme, THEME_OPTIONS["nathgpt"])["color"],
+        battery_saver=bool(users[user_key].get("battery_saver")),
     )
 
 
@@ -2925,6 +3979,25 @@ def staff_panel():
     return render_staff_dashboard()
 
 
+@app.route("/staff/statistics")
+def staff_statistics():
+    if not staff_is_authenticated():
+        return redirect(url_for("staff_panel"))
+    return render_template(
+        "staff_stats.html",
+        stats=build_staff_statistics(),
+    )
+
+
+@app.route("/api/staff/runtime-stats")
+def staff_runtime_stats():
+    if not staff_is_authenticated():
+        return jsonify({"error": "Accès staff requis."}), 403
+    runtime = discord_bridge.runtime_metrics()
+    runtime["recent_errors_24h"] = count_recent_runtime_errors(24)
+    return jsonify(runtime)
+
+
 @app.route("/staff/notifications/broadcast", methods=["POST"])
 def staff_broadcast_notification():
     if not staff_is_authenticated():
@@ -2976,6 +4049,96 @@ def staff_feature_toggle(feature_key):
     else:
         flash(f"{feature_state['label']} passe en maintenance ciblée.", "success")
 
+    return redirect(url_for("staff_panel"))
+
+
+@app.route("/staff/accounts/<username>/impersonate", methods=["POST"])
+def staff_impersonate_account(username):
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        flash("Compte introuvable.", "error")
+        return redirect(url_for("staff_panel"))
+    session["staff_impersonating"] = True
+    session["staff_impersonated_username"] = user_key
+    session["username"] = user_key
+    session.permanent = True
+    return redirect(url_for("chat"))
+
+
+@app.route("/staff/stop-impersonation", methods=["POST"])
+def staff_stop_impersonation():
+    if not staff_is_authenticated() or not session.get("staff_impersonating"):
+        return redirect(url_for("chat"))
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+    session.pop("staff_impersonating", None)
+    session.pop("staff_impersonated_username", None)
+    session.pop("username", None)
+    return redirect(url_for("staff_panel"))
+
+
+@app.route("/staff/features/<feature_key>/schedule", methods=["POST"])
+def staff_feature_schedule(feature_key):
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+
+    if feature_key not in FEATURE_MAINTENANCE_DEFAULTS:
+        return "Fonctionnalité inconnue.", 404
+
+    action = request.form.get("schedule_action", "save").strip().lower()
+    try:
+        if action == "clear":
+            feature = clear_feature_schedule(feature_key, session.get("username") or "staff")
+            flash(f"Maintenance programmée supprimée pour {feature['label']}.", "success")
+        else:
+            feature = set_feature_schedule(
+                feature_key,
+                request.form.get("scheduled_start", ""),
+                request.form.get("scheduled_end", ""),
+                request.form.get("scheduled_reason", ""),
+                session.get("username") or "staff",
+            )
+            flash(f"Maintenance programmée enregistrée pour {feature['label']}.", "success")
+    except ValueError as error:
+        flash(str(error), "error")
+
+    return redirect(url_for("staff_panel"))
+
+
+@app.route("/staff/bugs/<report_id>/status", methods=["POST"])
+def staff_bug_status(report_id):
+    if not staff_is_authenticated():
+        return "Accès staff requis.", 403
+
+    csrf_token = request.form.get("csrf_token", "")
+    if not secrets.compare_digest(csrf_token, session.get("staff_csrf_token", "")):
+        return "Requête staff invalide.", 400
+
+    status = request.form.get("status", "")
+    try:
+        updated = update_bug_report_status(report_id, status)
+    except ValueError as error:
+        flash(str(error), "error")
+        return redirect(url_for("staff_panel"))
+
+    if not updated:
+        flash("Ticket de bug introuvable.", "error")
+    else:
+        flash(
+            f"Ticket {report_id} → {BUG_STATUS_LABELS.get(status, status)}.",
+            "success",
+        )
     return redirect(url_for("staff_panel"))
 
 
@@ -3327,6 +4490,124 @@ def discord_job_events(job_id):
     response.headers["X-Accel-Buffering"] = "no"
 
     return response
+
+
+@app.route("/api/changelog/seen", methods=["POST"])
+def changelog_seen():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        return jsonify({"error": "Compte introuvable."}), 404
+    users[user_key]["changelog_seen_version"] = APP_RELEASE["version"]
+    users[user_key]["changelog_seen_at"] = utc_now()
+    save_json(USERS_FILE, users)
+    return jsonify({"ok": True, "version": APP_RELEASE["version"]})
+
+
+@app.route("/api/bug-reports", methods=["GET", "POST"])
+def bug_reports():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+
+    if request.method == "GET":
+        return jsonify({"tickets": get_user_bug_reports(username)})
+
+    payload = request.get_json(silent=True) or {}
+    description = str(payload.get("description") or "").strip()
+    if len(description) < 5:
+        return jsonify({"error": "Décris le problème un peu plus précisément."}), 400
+    report = save_bug_report(
+        username,
+        payload.get("category") or "Autre",
+        description,
+        payload.get("conversation_id") or "",
+    )
+    return jsonify({
+        "ok": True,
+        "report_id": report["id"],
+        "status": report["status"],
+        "status_label": report["status_label"],
+    })
+
+
+@app.route("/api/generation-history")
+def generation_history():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+    return jsonify({"items": flatten_generation_history(username)})
+
+
+@app.route("/api/conversations/<conversation_id>/pin", methods=["POST"])
+def pin_conversation(conversation_id):
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+
+    conversations = load_json(CONVERSATIONS_FILE, {})
+    owner = next((key for key in conversations if key.casefold() == username.casefold()), None)
+    if not owner:
+        return jsonify({"error": "Discussion introuvable."}), 404
+
+    conversation = next(
+        (item for item in conversations.get(owner, []) if item.get("id") == conversation_id),
+        None,
+    )
+    if not conversation:
+        return jsonify({"error": "Discussion introuvable."}), 404
+
+    payload = request.get_json(silent=True) or {}
+    if "pinned" in payload:
+        pinned = bool(payload.get("pinned"))
+    else:
+        pinned = not bool(conversation.get("pinned"))
+    conversation["pinned"] = pinned
+    if pinned:
+        conversation["pinned_at"] = utc_now()
+    else:
+        conversation.pop("pinned_at", None)
+    save_json(CONVERSATIONS_FILE, conversations)
+    return jsonify({"ok": True, "pinned": pinned})
+
+
+@app.route("/api/conversations/<conversation_id>/share", methods=["POST"])
+def share_conversation(conversation_id):
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+    conversation = get_conversation(username, conversation_id)
+    if not conversation:
+        return jsonify({"error": "Discussion introuvable."}), 404
+    payload = request.get_json(silent=True) or {}
+    try:
+        hours = int(payload.get("hours", 24))
+    except (TypeError, ValueError):
+        hours = 24
+    if hours not in {1, 24, 168}:
+        hours = 24
+    record = create_conversation_share(username, conversation, hours=hours)
+    return jsonify({
+        "ok": True,
+        "url": url_for("public_shared_conversation", token=record["token"], _external=True),
+        "expires_at": record["expires_at"],
+    })
+
+
+@app.route("/share/<token>")
+def public_shared_conversation(token):
+    record = get_conversation_share(token)
+    if not record:
+        return render_template("share.html", expired=True, conversation=None, share=None), 404
+    return render_template(
+        "share.html",
+        expired=False,
+        conversation=record.get("snapshot") or {},
+        share=record,
+    )
 
 
 @app.route("/api/conversations")

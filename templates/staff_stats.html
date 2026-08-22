@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Statistiques staff - NathGPT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
+</head>
+<body class="staff-page staff-stats-page">
+    <main class="staff-shell staff-stats-shell">
+        <header class="staff-header">
+            <div class="staff-brand">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT">
+                <div><p>Administration</p><h1>Statistiques NathGPT</h1></div>
+            </div>
+            <a class="staff-return" href="{{ url_for('staff_panel') }}">Retour au panel</a>
+        </header>
+
+        <section class="staff-analytics-grid">
+            <article><span>Comptes</span><strong>{{ stats.accounts }}</strong><small>{{ stats.active_24h }} actif(s) sur 24 h</small></article>
+            <article><span>Conversations</span><strong>{{ stats.conversations }}</strong><small>stockées dans l'historique</small></article>
+            <article><span>Questions</span><strong>{{ stats.questions }}</strong><small>{{ stats.answers }} réponse(s)</small></article>
+            <article><span>Images</span><strong>{{ stats.images }}</strong><small>générations classiques</small></article>
+            <article><span>Cricut</span><strong>{{ stats.cricut }}</strong><small>stickers générés</small></article>
+            <article class="staff-live-stat"><span>File d'attente</span><strong id="staffQueueSize">{{ stats.queue_waiting }}</strong><small id="staffQueueCaption">{{ stats.active_jobs }} requête(s) suivie(s) actuellement</small></article>
+            <article class="staff-live-stat"><span>Temps moyen</span><strong id="staffAverageGeneration">{{ stats.average_generation_label }}</strong><small>sur les générations enregistrées</small></article>
+            <article class="staff-live-stat {% if stats.recent_errors_24h %}has-errors{% endif %}"><span>Erreurs récentes</span><strong id="staffRecentErrors">{{ stats.recent_errors_24h }}</strong><small>sur les dernières 24 heures</small></article>
+        </section>
+
+        <section class="staff-analytics-card">
+            <div class="staff-table-title"><div><p>14 derniers jours</p><h2>Activité quotidienne</h2></div></div>
+            <div class="staff-table-scroll">
+                <table>
+                    <thead><tr><th>Date</th><th>Questions</th><th>Réponses</th><th>Images</th><th>Cricut</th></tr></thead>
+                    <tbody>
+                    {% for day in stats.daily %}
+                        <tr><td>{{ day.date }}</td><td>{{ day.questions }}</td><td>{{ day.answers }}</td><td>{{ day.images }}</td><td>{{ day.cricut }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="staff-analytics-card">
+            <div class="staff-table-title"><div><p>Utilisateurs</p><h2>Comptes les plus actifs</h2></div></div>
+            <div class="staff-table-scroll">
+                <table>
+                    <thead><tr><th>Compte</th><th>Questions</th><th>Conversations</th><th>Générations</th></tr></thead>
+                    <tbody>
+                    {% for user in stats.top_users %}
+                        <tr><td>{{ user.username }}</td><td>{{ user.questions }}</td><td>{{ user.conversations }}</td><td>{{ user.generations }}</td></tr>
+                    {% else %}
+                        <tr><td colspan="4" class="staff-empty">Pas encore de données.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+<script>
+function formatRuntimeDuration(seconds) {
+    const value = Math.max(0, Math.round(Number(seconds) || 0));
+    if (!value) return "—";
+    if (value < 60) return value + " s";
+    const minutes = Math.floor(value / 60);
+    const rest = value % 60;
+    if (minutes < 60) return minutes + " min " + String(rest).padStart(2, "0") + " s";
+    return Math.floor(minutes / 60) + " h " + String(minutes % 60).padStart(2, "0");
+}
+
+async function refreshRuntimeStats() {
+    try {
+        const response = await fetch("/api/staff/runtime-stats", {cache: "no-store"});
+        if (!response.ok) return;
+        const data = await response.json();
+        const queue = document.getElementById("staffQueueSize");
+        const caption = document.getElementById("staffQueueCaption");
+        const average = document.getElementById("staffAverageGeneration");
+        const errors = document.getElementById("staffRecentErrors");
+
+        if (queue) queue.textContent = String(data.queue_waiting || 0);
+        if (caption) caption.textContent = `${data.active_jobs || 0} requête(s) suivie(s) actuellement`;
+        if (average && Number(data.completed_sample || 0) > 0) {
+            average.textContent = formatRuntimeDuration(data.average_generation_seconds);
+        }
+        if (errors) errors.textContent = String(data.recent_errors_24h || 0);
+        errors?.closest("article")?.classList.toggle("has-errors", Number(data.recent_errors_24h || 0) > 0);
+    } catch (_) {}
+}
+refreshRuntimeStats();
+window.setInterval(refreshRuntimeStats, 5000);
+</script>
+</body>
+</html>

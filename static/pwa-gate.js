@@ -166,7 +166,7 @@
         gate.innerHTML = `
             <div class="pwa-install-glow glow-one"></div><div class="pwa-install-glow glow-two"></div>
             <div class="pwa-install-card">
-                <img src="/logo.png" alt="" class="pwa-install-logo">
+                <img src="/logo.png?v=auto" alt="" class="pwa-install-logo">
                 <span class="pwa-install-kicker">NATHGPT APP</span>
                 <h1>Ouvre NathGPT comme une vraie application</h1>
                 <p>Pour utiliser NathGPT sur téléphone, ajoute-le d’abord à ton écran d’accueil.</p>
@@ -220,3 +220,27 @@
         renderGate();
     }
 })();
+
+
+// Logo NathGPT auto-versionné : si logo.png change sur le serveur, le prochain
+// lancement/retour sur l'app récupère sa nouvelle empreinte et évite l'ancien cache.
+async function refreshNathGptLogo() {
+    try {
+        const response = await fetch('/api/logo-version', { cache: 'no-store' });
+        if (!response.ok) return;
+        const payload = await response.json();
+        if (!payload?.url) return;
+        document.querySelectorAll('img[src^="/logo.png"]').forEach((img) => {
+            if (img.getAttribute('src') !== payload.url) img.src = payload.url;
+        });
+        document.querySelectorAll('link[rel="icon"], link[rel="apple-touch-icon"]').forEach((link) => {
+            link.href = payload.url;
+        });
+        localStorage.setItem('nathgpt-logo-version', payload.version || '');
+    } catch (_) {}
+}
+window.addEventListener('pageshow', refreshNathGptLogo);
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshNathGptLogo();
+});
+refreshNathGptLogo();

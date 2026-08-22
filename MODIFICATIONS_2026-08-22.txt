@@ -9,3 +9,26 @@ NathGPT - correctifs et animations (22/08/2026)
 - Vérification syntaxique Python (server.py, discord_bridge.py) et JavaScript principal effectuée.
 
 - Ajout d'une maintenance ciblée par fonctionnalité depuis /staff (réponses texte, génération d'images, mode Cricut).
+- Ajout du stockage persistant des conversations dans Supabase, avec migration automatique de conversations.json et fallback local.
+- Ajout du bouton Signaler un bug avec stockage Supabase/fallback local et affichage dans le panel staff.
+- Nouvel écran de chargement premium avec carte vitrée, profondeur, scan lumineux et transitions.
+- Changelog cumulatif par compte : toutes les versions non consultées sont affichées à la reconnexion.
+- Historique avancé des générations : recherche, filtres Image/Cricut et réouverture de la discussion source.
+- Retour haptique via l'API Vibration sur navigateurs compatibles + micro-interactions tactiles de secours.
+- Partage temporaire d'une conversation : snapshot public en lecture seule, expiration 1 h / 24 h / 7 j côté API (UI 24 h).
+- Impersonation staff sécurisée : ouverture d'un compte depuis /staff sans modifier son mot de passe, avec bannière et sortie dédiée.
+
+- Ajout d’un captcha arithmétique simple à la création de compte.
+- Ajout de la maintenance programmée par fonctionnalité (début, fin, message) depuis /staff, persistée dans Supabase.
+- V5 : conversations épinglables et triées en tête de l'historique.
+- V5 : révocation des liens publics temporaires depuis les paramètres.
+- V5 : mode économie batterie avec réduction des animations/particules.
+- V5 : page Mes statistiques par utilisateur.
+- V5 : page statistiques détaillées réservée au staff.
+- V5 : thèmes NathGPT, OLED, Océan, Violet et Clair, persistés dans le compte Supabase.
+- V6 : système de tickets de bugs avec identifiant lisible et statuts Nouveau / En cours / Corrigé / Fermé.
+- V6 : les utilisateurs peuvent consulter le suivi de leurs tickets depuis le chat.
+- V6 : statistiques staff enrichies avec taille de file, temps moyen de génération et erreurs des dernières 24 h.
+- V6 : statistiques runtime actualisées automatiquement toutes les 5 secondes côté staff.
+
+- Logo auto-versionné par empreinte SHA-256 : remplacer logo.png suffit pour actualiser le logo web/PWA au prochain lancement, sans ancien cache.

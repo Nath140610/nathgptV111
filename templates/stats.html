@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="{{ theme_color }}">
+    <title>Mes statistiques - NathGPT</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
+    <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
+</head>
+<body class="settings-page stats-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}">
+    <main class="settings-shell stats-shell">
+        <header class="settings-header">
+            <div class="settings-brand">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT">
+                <div><p>Mon activité</p><h1>Mes statistiques</h1></div>
+            </div>
+            <a class="staff-return" href="{{ url_for('settings') }}">Retour aux paramètres</a>
+        </header>
+
+        <section class="personal-stats-grid">
+            <article><span>Conversations</span><strong>{{ stats.conversations }}</strong><small>{{ stats.pinned }} épinglée(s)</small></article>
+            <article><span>Questions envoyées</span><strong>{{ stats.questions }}</strong><small>{{ stats.messages }} messages au total</small></article>
+            <article><span>Réponses NathGPT</span><strong>{{ stats.answers }}</strong><small>dans ton historique</small></article>
+            <article><span>Générations</span><strong>{{ stats.total_generations }}</strong><small>{{ stats.images }} image(s) · {{ stats.cricut_images }} Cricut</small></article>
+            <article><span>Liens actifs</span><strong>{{ stats.active_shares }}</strong><small>partages temporaires</small></article>
+        </section>
+
+        <section class="settings-card stats-detail-card">
+            <p class="settings-eyebrow">Chronologie</p>
+            <h2>Ton activité NathGPT</h2>
+            <dl class="settings-details">
+                <div><dt>Compte créé</dt><dd>{{ account.created_at or "Inconnue" }}</dd></div>
+                <div><dt>Premier message enregistré</dt><dd>{{ stats.first_message_at or "Aucun message" }}</dd></div>
+                <div><dt>Dernier message enregistré</dt><dd>{{ stats.last_message_at or "Aucun message" }}</dd></div>
+            </dl>
+        </section>
+    </main>
+</body>
+</html>

@@ -3,21 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#f5f5f7">
+    <meta name="theme-color" content="{{ theme_color }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
-    <link rel="icon" type="image/png" href="/logo.png?v={{ asset_version }}">
-    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ asset_version }}">
+    <link rel="manifest" href="/manifest.webmanifest?v={{ logo_version }}">
+    <link rel="icon" type="image/png" href="/logo.png?v={{ logo_version }}">
+    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ logo_version }}">
     <meta name="apple-mobile-web-app-title" content="NathGPT">
     <title>NathGPT</title>
 
     <!-- Évite l'écran noir/non stylé visible quelques instants par iOS avant
          le téléchargement de la feuille CSS principale. -->
     <style>
-        html { min-height: 100%; background: #f5f5f7; }
-        body { min-height: 100vh; margin: 0; background: #f5f5f7; }
-        #launchScreen { position: fixed; z-index: 9999; inset: 0; min-height: 100vh; background: #f5f5f7; }
+        html { min-height: 100%; background: {{ theme_color }}; }
+        body { min-height: 100vh; margin: 0; background: {{ theme_color }}; }
+        #launchScreen { position: fixed; z-index: 9999; inset: 0; min-height: 100vh; background: {{ theme_color }}; }
     </style>
 
     <link
@@ -27,7 +27,7 @@
     <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
 </head>
 
-<body class="chat-page" data-account-key="{{ username }}">
+<body class="chat-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}" data-account-key="{{ username }}" data-battery-saver="{{ '1' if battery_saver else '0' }}">
 
 <div class="launch-screen" id="launchScreen" role="status" aria-label="Ouverture de NathGPT">
     <div class="launch-aurora launch-aurora-one"></div>
@@ -46,7 +46,7 @@
         <span class="launch-spinner" aria-hidden="true"></span>
         <div class="launch-logo-shell">
             <span class="launch-logo-reflection"></span>
-            <img src="/logo.png" alt="">
+            <img src="/logo.png?v={{ logo_version }}" alt="">
         </div>
     </div>
     <div class="launch-copy">
@@ -65,8 +65,18 @@
 </div>
 
 <script id="appReleaseData" type="application/json">{{ app_release|tojson }}</script>
+<script id="pendingReleasesData" type="application/json">{{ pending_releases|tojson }}</script>
 
 <div class="app">
+{% if staff_impersonating %}
+<div class="staff-impersonation-banner" role="status">
+    <span>Mode staff · vous consultez le compte <strong>{{ username }}</strong></span>
+    <form method="POST" action="{{ url_for('staff_stop_impersonation') }}">
+        <input type="hidden" name="csrf_token" value="{{ session.get('staff_csrf_token', '') }}">
+        <button type="submit">Quitter le compte utilisateur</button>
+    </form>
+</div>
+{% endif %}
 
     <!-- ===================================================== -->
     <!-- SIDEBAR -->
@@ -75,7 +85,7 @@
     <aside class="sidebar">
 
         <div class="brand">
-            <img src="/logo.png" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
+            <img src="/logo.png?v={{ logo_version }}" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
             <span>NathGPT</span>
         </div>
 
@@ -102,6 +112,13 @@
             ✧ Générations automatiques
         </button>
         {% endif %}
+
+        <button class="generation-history-entry" type="button" onclick="openGenerationHistory()">
+            ◫ Historique des générations
+        </button>
+        <button class="generation-history-entry" type="button" onclick="window.location.href='{{ url_for('my_statistics') }}'">
+            ▥ Mes statistiques
+        </button>
 
         <div class="history">
 
@@ -154,7 +171,7 @@
         <div class="topbar">
 
             <div class="mobile-brand">
-                <img src="/logo.png" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT" class="staff-trigger" data-staff-trigger role="button" tabindex="0" aria-label="NathGPT">
                 <span>NathGPT</span>
             </div>
 
@@ -204,7 +221,7 @@
             {% endif %}
 
             <img
-                    src="/logo.png"
+                    src="/logo.png?v={{ logo_version }}"
                     class="welcome-logo"
                     alt="NathGPT"
                 >
@@ -285,7 +302,11 @@
                 ></div>
 
                 <div class="footer-text">
-                    NathGPT peut faire des erreurs.
+                    <span>NathGPT peut faire des erreurs.</span>
+                    <span class="footer-actions">
+                        <button type="button" onclick="openBugReport()">Signaler un bug</button>
+                        <button type="button" onclick="shareCurrentConversation()">Partager la conversation</button>
+                    </span>
                 </div>
 
             </div>
@@ -316,6 +337,8 @@
             <button type="button" class="mobile-cricut-entry" onclick="openCricutUploader()">✦ Adapter des stickers</button>
             <button type="button" class="mobile-automatic-generation-entry" onclick="openAutomaticGenerations()">✧ Générations automatiques</button>
             {% endif %}
+            <button type="button" class="mobile-generation-history-entry" onclick="closeMobileHistory(); openGenerationHistory();">◫ Historique des générations</button>
+            <button type="button" class="mobile-generation-history-entry" onclick="window.location.href='{{ url_for('my_statistics') }}'">▥ Mes statistiques</button>
             <div class="mobile-history-list" id="mobileHistoryList"></div>
             <a class="mobile-history-settings" href="{{ url_for('settings') }}">⚙ Paramètres</a>
         </aside>
@@ -323,6 +346,39 @@
 
 </div>
 
+<div class="utility-modal" id="bugReportModal" aria-hidden="true">
+    <button class="utility-modal-backdrop" type="button" onclick="closeBugReport()"></button>
+    <section class="utility-modal-card bug-ticket-modal" role="dialog" aria-modal="true" aria-labelledby="bugReportTitle">
+        <div class="utility-modal-head"><div><small>Support NathGPT</small><h2 id="bugReportTitle">Tickets de bugs</h2></div><button type="button" onclick="closeBugReport()">×</button></div>
+        <div class="bug-ticket-tabs">
+            <button type="button" class="is-active" data-ticket-tab="new" onclick="switchBugTicketTab('new')">Nouveau ticket</button>
+            <button type="button" data-ticket-tab="mine" onclick="switchBugTicketTab('mine')">Mes tickets</button>
+        </div>
+        <div id="bugTicketNewPane" class="bug-ticket-pane is-active">
+            <label>Type de problème<select id="bugCategory"><option>Interface</option><option>Réponse texte</option><option>Génération d'image</option><option>Cricut</option><option>Connexion</option><option>Autre</option></select></label>
+            <label>Que s'est-il passé ?<textarea id="bugDescription" maxlength="2000" placeholder="Décris ce que tu faisais et ce qui n'a pas fonctionné."></textarea></label>
+            <button class="utility-primary" type="button" onclick="submitBugReport()">Créer le ticket</button>
+            <p class="utility-feedback" id="bugFeedback"></p>
+        </div>
+        <div id="bugTicketMinePane" class="bug-ticket-pane">
+            <div id="myBugTickets" class="my-bug-ticket-list"><div class="generation-history-empty">Chargement…</div></div>
+        </div>
+    </section>
+</div>
+
+<div class="utility-modal generation-history-modal" id="generationHistoryModal" aria-hidden="true">
+    <button class="utility-modal-backdrop" type="button" onclick="closeGenerationHistory()"></button>
+    <section class="utility-modal-card wide" role="dialog" aria-modal="true" aria-labelledby="generationHistoryTitle">
+        <div class="utility-modal-head"><div><small>Bibliothèque</small><h2 id="generationHistoryTitle">Historique des générations</h2></div><button type="button" onclick="closeGenerationHistory()">×</button></div>
+        <div class="generation-history-tools">
+            <input id="generationHistorySearch" type="search" placeholder="Rechercher un prompt ou une discussion…" oninput="renderGenerationHistory()">
+            <select id="generationHistoryFilter" onchange="renderGenerationHistory()"><option value="all">Tout</option><option value="image">Images</option><option value="cricut">Cricut</option></select>
+        </div>
+        <div class="generation-history-grid" id="generationHistoryGrid"><div class="generation-history-empty">Chargement…</div></div>
+    </section>
+</div>
+
+<div class="toast-stack" id="toastStack" aria-live="polite"></div>
 
 <script>
 
@@ -701,6 +757,8 @@ input.addEventListener(
 /* ========================================================= */
 
 function sendMessage() {
+
+    haptic("send");
 
     if (serviceOutage?.outage) {
         setServiceOutage(serviceOutage);
@@ -1645,8 +1703,8 @@ async function notifyGenerationReady(title, body) {
         const registration = await navigator.serviceWorker.ready;
         await registration.showNotification(title, {
             body,
-            icon: "/logo.png",
-            badge: "/logo.png",
+            icon: "/logo.png?v={{ logo_version }}",
+            badge: "/logo.png?v={{ logo_version }}",
             tag: "nathgpt-generation-ready",
             renotify: true,
             vibrate: [120, 55, 120],
@@ -1982,17 +2040,52 @@ function renderConversationHistory(items) {
 
     for (const item of items) {
         const createItem = () => {
+            const row = document.createElement("div");
+            row.className = `history-row${item.pinned ? " is-pinned" : ""}`;
+
             const history = document.createElement("button");
             history.type = "button";
             history.className = "history-item";
             history.textContent = item.title || "Nouvelle discussion";
             history.title = history.textContent;
             history.onclick = () => openConversation(item.id);
-            return history;
+
+            const pin = document.createElement("button");
+            pin.type = "button";
+            pin.className = "history-pin";
+            pin.textContent = item.pinned ? "●" : "○";
+            pin.title = item.pinned ? "Désépingler" : "Épingler";
+            pin.setAttribute("aria-label", pin.title);
+            pin.onclick = (event) => {
+                event.stopPropagation();
+                toggleConversationPin(item.id, !item.pinned);
+            };
+
+            row.append(history, pin);
+            return row;
         };
 
         historyList.appendChild(createItem());
         mobileHistoryList.appendChild(createItem());
+    }
+}
+
+async function toggleConversationPin(conversationId, pinned) {
+    haptic("soft");
+    try {
+        const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/pin`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({pinned})
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Impossible de modifier l'épingle.");
+        showToast(payload.pinned ? "Conversation épinglée" : "Conversation désépinglée");
+        loadConversations();
+    }
+    catch (error) {
+        haptic("error");
+        showToast(error.message || "Impossible de modifier l'épingle.", "error");
     }
 }
 
@@ -2573,7 +2666,7 @@ function showImageGeneration() {
         <div class="image-generation-header">
 
             <img
-                src="/logo.png"
+                src="/logo.png?v={{ logo_version }}"
                 class="image-generation-logo"
                 alt="NathGPT"
             >
@@ -5890,66 +5983,254 @@ const launchStartedAt = performance.now();
 let launchProgressFrame = null;
 let launchFinishRequested = false;
 
-function showAppUpdateIfNeeded() {
-    const releaseData = document.getElementById("appReleaseData");
-    if (!releaseData) {
-        return;
-    }
+let generationHistoryItems = [];
 
-    let release;
-    try {
-        release = JSON.parse(releaseData.textContent || "{}");
-    }
-    catch (_) {
-        return;
-    }
-    if (!release.version || !Array.isArray(release.additions)) {
-        return;
-    }
+function haptic(kind = "tap") {
+    if (!navigator.vibrate) return false;
+    const batterySaver = document.body.dataset.batterySaver === "1";
+    const patterns = batterySaver ? {
+        tap: 5, soft: 4, success: 8, error: 12, send: 5
+    } : {
+        tap: 10,
+        soft: 7,
+        success: [12, 35, 18],
+        error: [28, 35, 28],
+        send: [8, 18, 12]
+    };
+    try { return navigator.vibrate(patterns[kind] || patterns.tap); }
+    catch (_) { return false; }
+}
 
-    const storageKey = "nathgpt-release-seen";
+function showToast(message, kind = "default") {
+    const stack = document.getElementById("toastStack");
+    if (!stack) return;
+    const toast = document.createElement("div");
+    toast.className = `ui-toast ${kind}`;
+    toast.textContent = message;
+    stack.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("show"));
+    setTimeout(() => { toast.classList.remove("show"); setTimeout(() => toast.remove(), 250); }, 2600);
+}
+
+document.addEventListener("pointerup", (event) => {
+    if (event.target.closest("button, .history-item, a.settings-button, a.logout-button")) haptic("soft");
+}, {passive: true});
+
+function formatTicketDate(value) {
+    if (!value) return "date inconnue";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return new Intl.DateTimeFormat("fr-FR", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+    }).format(date);
+}
+
+function bugStatusLabel(status) {
+    return ({
+        new: "Nouveau",
+        in_progress: "En cours",
+        fixed: "Corrigé",
+        closed: "Fermé"
+    })[status] || "Nouveau";
+}
+
+function switchBugTicketTab(tab) {
+    const isMine = tab === "mine";
+    document.querySelectorAll("[data-ticket-tab]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.ticketTab === tab);
+    });
+    document.getElementById("bugTicketNewPane")?.classList.toggle("is-active", !isMine);
+    document.getElementById("bugTicketMinePane")?.classList.toggle("is-active", isMine);
+    if (isMine) loadMyBugTickets();
+}
+
+function openBugReport() {
+    haptic("tap");
+    const modal = document.getElementById("bugReportModal");
+    modal?.classList.add("is-open");
+    modal?.setAttribute("aria-hidden", "false");
+    switchBugTicketTab("new");
+    setTimeout(() => document.getElementById("bugDescription")?.focus(), 120);
+}
+function closeBugReport() {
+    const modal = document.getElementById("bugReportModal");
+    modal?.classList.remove("is-open");
+    modal?.setAttribute("aria-hidden", "true");
+}
+
+async function loadMyBugTickets() {
+    const list = document.getElementById("myBugTickets");
+    if (!list) return;
+    list.innerHTML = '<div class="generation-history-empty">Chargement…</div>';
     try {
-        if (localStorage.getItem(storageKey) === release.version) {
+        const response = await fetch("/api/bug-reports", {cache: "no-store"});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Impossible de charger les tickets.");
+        const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+        if (!tickets.length) {
+            list.innerHTML = '<div class="generation-history-empty">Tu n’as encore créé aucun ticket.</div>';
             return;
         }
+        list.innerHTML = tickets.map((ticket) => `
+            <article class="my-bug-ticket status-${escapeHtml(ticket.status || "new")}">
+                <div class="my-bug-ticket-head">
+                    <strong>#${escapeHtml(ticket.id || "BUG")}</strong>
+                    <span class="bug-ticket-status status-${escapeHtml(ticket.status || "new")}">${escapeHtml(ticket.status_label || bugStatusLabel(ticket.status))}</span>
+                </div>
+                <small>${escapeHtml(ticket.category || "Autre")} · ${escapeHtml(formatTicketDate(ticket.created_at || ""))}</small>
+                <p>${escapeHtml(ticket.description || "")}</p>
+            </article>
+        `).join("");
+    } catch (error) {
+        list.innerHTML = `<div class="generation-history-empty">${escapeHtml(error.message || "Chargement impossible.")}</div>`;
     }
-    catch (_) {
-        // L'annonce reste visible lorsque le navigateur bloque le stockage local.
+}
+
+async function submitBugReport() {
+    const description = document.getElementById("bugDescription")?.value.trim() || "";
+    const category = document.getElementById("bugCategory")?.value || "Autre";
+    const feedback = document.getElementById("bugFeedback");
+    if (description.length < 5) {
+        if (feedback) feedback.textContent = "Décris un peu plus le problème.";
+        haptic("error");
+        return;
     }
+    if (feedback) feedback.textContent = "Création du ticket…";
+    try {
+        const response = await fetch("/api/bug-reports", {
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({category, description, conversation_id: currentConversationId})
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Envoi impossible.");
+        haptic("success");
+        if (feedback) feedback.textContent = `Ticket #${payload.report_id} créé · ${payload.status_label || "Nouveau"}.`;
+        const textarea = document.getElementById("bugDescription");
+        if (textarea) textarea.value = "";
+        showToast(`Ticket #${payload.report_id} créé`, "success");
+        window.setTimeout(() => switchBugTicketTab("mine"), 650);
+    } catch (error) {
+        haptic("error");
+        if (feedback) feedback.textContent = error.message;
+    }
+}
+
+async function shareCurrentConversation() {
+    haptic("tap");
+    if (!currentConversationId) { showToast("Ouvre d'abord une conversation à partager.", "error"); return; }
+    try {
+        const response = await fetch(`/api/conversations/${encodeURIComponent(currentConversationId)}/share`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({hours:24})});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Partage impossible.");
+        if (navigator.share) {
+            try { await navigator.share({title:"Conversation NathGPT", url: payload.url}); haptic("success"); return; }
+            catch (_) {}
+        }
+        await navigator.clipboard.writeText(payload.url);
+        haptic("success");
+        showToast("Lien public copié · valable 24 h", "success");
+    } catch (error) { haptic("error"); showToast(error.message || "Partage impossible.", "error"); }
+}
+
+async function openGenerationHistory() {
+    haptic("tap");
+    const modal = document.getElementById("generationHistoryModal");
+    modal?.classList.add("is-open");
+    modal?.setAttribute("aria-hidden", "false");
+    const grid = document.getElementById("generationHistoryGrid");
+    if (grid) grid.innerHTML = '<div class="generation-history-empty">Chargement…</div>';
+    try {
+        const response = await fetch("/api/generation-history", {cache:"no-store"});
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Impossible de charger l'historique.");
+        generationHistoryItems = payload.items || [];
+        renderGenerationHistory();
+    } catch (error) { if (grid) grid.innerHTML = `<div class="generation-history-empty">${escapeHtml(error.message)}</div>`; }
+}
+function closeGenerationHistory() {
+    const modal = document.getElementById("generationHistoryModal");
+    modal?.classList.remove("is-open");
+    modal?.setAttribute("aria-hidden", "true");
+}
+function escapeHtml(value) {
+    return String(value || "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+}
+function renderGenerationHistory() {
+    const grid = document.getElementById("generationHistoryGrid");
+    if (!grid) return;
+    const search = (document.getElementById("generationHistorySearch")?.value || "").trim().toLowerCase();
+    const filter = document.getElementById("generationHistoryFilter")?.value || "all";
+    const items = generationHistoryItems.filter(item => {
+        if (filter !== "all" && item.type !== filter) return false;
+        const haystack = `${item.prompt || ""} ${item.conversation_title || ""}`.toLowerCase();
+        return !search || haystack.includes(search);
+    });
+    if (!items.length) { grid.innerHTML = '<div class="generation-history-empty">Aucune génération ne correspond à cette recherche.</div>'; return; }
+    grid.innerHTML = items.map(item => `<article class="generation-history-card"><button type="button" onclick="closeGenerationHistory(); openConversation('${escapeHtml(item.conversation_id)}')"><img src="${escapeHtml(item.image_url)}" loading="lazy" alt=""><span class="generation-history-type">${item.type === 'cricut' ? 'Cricut' : 'Image'}</span><strong>${escapeHtml(item.prompt || item.conversation_title || 'Génération')}</strong><small>${escapeHtml(item.conversation_title || '')}</small></button></article>`).join("");
+}
+
+function showAppUpdateIfNeeded() {
+    const pendingData = document.getElementById("pendingReleasesData");
+    if (!pendingData) return;
+
+    let releases = [];
+    try { releases = JSON.parse(pendingData.textContent || "[]"); }
+    catch (_) { return; }
+    if (!Array.isArray(releases) || releases.length === 0) return;
 
     const dialog = document.createElement("section");
     dialog.className = "app-update-dialog";
     dialog.setAttribute("role", "dialog");
     dialog.setAttribute("aria-modal", "true");
     dialog.setAttribute("aria-labelledby", "appUpdateTitle");
+
     const card = document.createElement("div");
-    card.className = "app-update-card";
+    card.className = "app-update-card cumulative";
     const eyebrow = document.createElement("p");
-    eyebrow.textContent = `VERSION ${release.version}`;
+    eyebrow.textContent = releases.length > 1 ? `${releases.length} MISES À JOUR DEPUIS TA DERNIÈRE VISITE` : `NOUVELLE MISE À JOUR`;
     const title = document.createElement("h2");
     title.id = "appUpdateTitle";
-    title.textContent = release.title || "Mise à jour";
+    title.textContent = "Voici les nouveautés";
     const intro = document.createElement("span");
-    intro.textContent = "Nouveautés";
-    const list = document.createElement("ul");
-    release.additions.slice(0, 6).forEach((addition) => {
-        const item = document.createElement("li");
-        item.textContent = String(addition);
-        list.appendChild(item);
+    intro.textContent = releases.length > 1 ? "Tu n'as rien raté : voici tout ce qui a changé depuis la dernière fois." : (releases[0].title || "Nouveautés");
+    const timeline = document.createElement("div");
+    timeline.className = "changelog-timeline";
+
+    releases.forEach((release) => {
+        const section = document.createElement("section");
+        section.className = "changelog-release";
+        const head = document.createElement("div");
+        const releaseTitle = document.createElement("strong");
+        releaseTitle.textContent = release.title || `Version ${release.version}`;
+        const version = document.createElement("small");
+        version.textContent = `Version ${release.version}`;
+        head.append(releaseTitle, version);
+        const list = document.createElement("ul");
+        (release.additions || []).forEach((addition) => {
+            const item = document.createElement("li");
+            item.textContent = String(addition);
+            list.appendChild(item);
+        });
+        section.append(head, list);
+        timeline.appendChild(section);
     });
+
     const close = document.createElement("button");
     close.type = "button";
-    close.textContent = "Continuer";
-    const dismiss = () => {
-        try {
-            localStorage.setItem(storageKey, release.version);
-        }
-        catch (_) {}
+    close.textContent = "J'ai vu les nouveautés";
+    const dismiss = async () => {
+        haptic("success");
+        fetch("/api/changelog/seen", { method: "POST", headers: {"Content-Type": "application/json"}, body: "{}" }).catch(() => {});
         dialog.classList.add("is-closing");
         window.setTimeout(() => dialog.remove(), 280);
     };
     close.addEventListener("click", dismiss);
-    card.append(eyebrow, title, intro, list, close);
+    card.append(eyebrow, title, intro, timeline, close);
     dialog.appendChild(card);
     document.body.appendChild(dialog);
     window.requestAnimationFrame(() => dialog.classList.add("is-visible"));

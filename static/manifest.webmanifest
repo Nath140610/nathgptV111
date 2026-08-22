@@ -10,7 +10,7 @@
   "theme_color": "#1c2422",
   "icons": [
     {
-      "src": "/logo.png?v=3",
+      "src": "/logo.png",
       "sizes": "800x800",
       "type": "image/png",
       "purpose": "any maskable"

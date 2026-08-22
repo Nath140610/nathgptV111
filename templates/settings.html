@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#202725">
+    <meta name="theme-color" content="{{ theme_color }}">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
-    <link rel="icon" type="image/png" href="/logo.png?v={{ asset_version }}">
-    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ asset_version }}">
+    <link rel="manifest" href="/manifest.webmanifest?v={{ logo_version }}">
+    <link rel="icon" type="image/png" href="/logo.png?v={{ logo_version }}">
+    <link rel="apple-touch-icon" sizes="800x800" href="/logo.png?v={{ logo_version }}">
     <meta name="apple-mobile-web-app-title" content="NathGPT">
     <title>Paramètres - NathGPT</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v=asset_version) }}">
     <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
 </head>
-<body class="settings-page">
+<body class="settings-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}">
     <main class="settings-shell">
         <header class="settings-header">
             <div class="settings-brand">
-                <img src="/logo.png" alt="NathGPT">
+                <img src="/logo.png?v={{ logo_version }}" alt="NathGPT">
                 <div>
                     <p>Mon espace</p>
                     <h1>Paramètres</h1>
@@ -43,6 +43,52 @@
                 <div><dt>Dernière activité</dt><dd>{{ account.last_seen_at or account.last_login_at or "Inconnue" }}</dd></div>
             </dl>
             <a class="settings-logout" href="{{ url_for('logout') }}">Se déconnecter</a>
+        </section>
+
+        <section class="settings-card settings-preferences">
+            <p class="settings-eyebrow">Apparence</p>
+            <h2>Thème et économie d'énergie</h2>
+            <p>Choisis l'ambiance de NathGPT. Le mode économie batterie réduit les particules, flous et animations continues.</p>
+            <form method="POST" action="{{ url_for('update_preferences') }}" class="settings-preferences-form">
+                <input type="hidden" name="csrf_token" value="{{ settings_csrf_token }}">
+                <label for="themeSelect">Thème</label>
+                <select id="themeSelect" name="theme">
+                    {% for key, theme in theme_options.items() %}
+                        <option value="{{ key }}" {% if user_theme == key %}selected{% endif %}>{{ theme.label }}</option>
+                    {% endfor %}
+                </select>
+                <label class="settings-toggle">
+                    <input type="checkbox" name="battery_saver" value="1" {% if battery_saver %}checked{% endif %}>
+                    <span><strong>Mode économie batterie</strong><small>Réduit les animations et effets visuels gourmands, surtout utile sur téléphone.</small></span>
+                </label>
+                <button type="submit" class="settings-save-button">Enregistrer l'apparence</button>
+            </form>
+        </section>
+
+        <section class="settings-card settings-stats-card">
+            <p class="settings-eyebrow">Activité</p>
+            <h2>Mes statistiques</h2>
+            <p>Retrouve le nombre de conversations, questions, réponses et générations réalisées avec ton compte.</p>
+            <a class="settings-primary-link" href="{{ url_for('my_statistics') }}">Voir mes statistiques</a>
+        </section>
+
+        <section class="settings-card settings-shares">
+            <p class="settings-eyebrow">Partage</p>
+            <h2>Liens de conversation actifs</h2>
+            <p>Tu peux couper immédiatement un lien partagé avant sa date d'expiration.</p>
+            <div class="settings-share-list">
+                {% for share in active_shares %}
+                    <article>
+                        <div><strong>{{ share.title or "Conversation" }}</strong><small>Expire le {{ share.expires_at }}</small></div>
+                        <form method="POST" action="{{ url_for('revoke_share', token=share.token) }}">
+                            <input type="hidden" name="csrf_token" value="{{ settings_csrf_token }}">
+                            <button type="submit">Révoquer</button>
+                        </form>
+                    </article>
+                {% else %}
+                    <div class="settings-empty-state">Aucun lien de partage actif.</div>
+                {% endfor %}
+            </div>
         </section>
 
         <section class="settings-card settings-notifications">

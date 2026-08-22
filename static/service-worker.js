@@ -1,8 +1,9 @@
-const CACHE_NAME = "nathgpt-shell-v5";
+const LOGO_VERSION = "__LOGO_VERSION__";
+const CACHE_NAME = `nathgpt-shell-${LOGO_VERSION}`;
 const APP_SHELL = [
     "/static/style.css",
-    "/static/manifest.webmanifest?v=5",
-    "/logo.png?v=5"
+    "/manifest.webmanifest?v=" + LOGO_VERSION,
+    "/logo.png?v=" + LOGO_VERSION
 ];
 
 self.addEventListener("install", (event) => {
@@ -50,8 +51,8 @@ self.addEventListener("push", (event) => {
     }
     event.waitUntil(self.registration.showNotification(data.title || "NathGPT", {
         body: data.body || "Ta génération est prête.",
-        icon: "/logo.png?v=5",
-        badge: "/logo.png?v=5",
+        icon: "/logo.png?v=" + LOGO_VERSION,
+        badge: "/logo.png?v=" + LOGO_VERSION,
         tag: data.conversation_id || "nathgpt-notification",
         renotify: true,
         vibrate: [120, 55, 120],

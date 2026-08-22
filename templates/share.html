@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex,nofollow">
+    <title>{{ (conversation.title if conversation else 'Conversation') }} · NathGPT</title>
+    <style>
+        *{box-sizing:border-box}body{margin:0;color:#1d1d1f;background:#f5f5f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.shell{width:min(820px,calc(100% - 28px));margin:0 auto;padding:38px 0 70px}.head{display:flex;align-items:center;gap:12px;margin-bottom:24px}.head img{width:42px;height:42px;border-radius:13px}.head strong{display:block;font-size:17px}.head span{display:block;margin-top:2px;color:#86868b;font-size:11px}.card{padding:22px;border:1px solid rgba(29,29,31,.08);border-radius:24px;background:#fff;box-shadow:0 20px 60px rgba(0,0,0,.07)}h1{margin:0 0 20px;font-size:25px;letter-spacing:-.04em}.messages{display:grid;gap:15px}.message{max-width:88%;padding:12px 14px;border-radius:17px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px}.user{margin-left:auto;color:#fff;background:#1d1d1f}.assistant{margin-right:auto;background:#f0f0f3}.message img{display:block;width:min(100%,520px);margin-top:10px;border-radius:14px}.expired{text-align:center;padding:70px 20px}.expired h1{margin-bottom:8px}.expired p{color:#777}.foot{margin-top:16px;color:#929297;font-size:10px;text-align:center}@media(max-width:600px){.shell{padding-top:20px}.card{padding:15px;border-radius:19px}.message{max-width:94%;font-size:13px}}
+    </style>
+</head>
+<body>
+<main class="shell">
+    <div class="head"><img src="/logo.png?v={{ logo_version }}" alt=""><div><strong>NathGPT</strong><span>Conversation partagée temporairement</span></div></div>
+    {% if expired %}
+        <section class="card expired"><h1>Lien expiré</h1><p>Cette conversation n'est plus disponible publiquement.</p></section>
+    {% else %}
+        <section class="card">
+            <h1>{{ conversation.title or 'Conversation' }}</h1>
+            <div class="messages">
+                {% for message in conversation.messages or [] %}
+                    <article class="message {{ 'user' if message.role == 'user' else 'assistant' }}">
+                        {{ message.content }}
+                        {% if message.image_url %}<img src="{{ message.image_url }}" alt="Image générée">{% endif %}
+                        {% for image in message.cricut_images or [] %}<img src="{{ image }}" alt="Résultat Cricut">{% endfor %}
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+        <div class="foot">Lien valable jusqu'au {{ share.expires_at }} · lecture seule</div>
+    {% endif %}
+</main>
+</body>
+</html>
