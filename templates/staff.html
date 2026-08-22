@@ -158,10 +158,14 @@
                                 <tr>
                                     <td>{{ account.username }}</td>
                                     <td>
-                                        <span class="staff-status {% if account.banned_until %}is-banned{% elif account.active %}is-active{% endif %}">
+                                        <span class="staff-status {% if account.banned_until %}is-banned{% elif account.access_status == 'expired' %}is-banned{% elif account.access_status == 'trial' %}is-trial{% elif account.active %}is-active{% endif %}">
                                             <i></i>
                                             {% if account.banned_until %}
                                                 Banni jusqu'au {{ account.banned_until }}
+                                            {% elif account.access_status == 'expired' %}
+                                                Essai expiré · validation requise
+                                            {% elif account.access_status == 'trial' %}
+                                                Essai 1 jour · jusqu'au {{ account.trial_expires_at }}
                                             {% else %}
                                                 {{ "Actif" if account.active else "Absent" }}
                                             {% endif %}
@@ -171,6 +175,13 @@
                                     <td>{{ account.last_seen_at }}</td>
                                     <td>{{ account.created_at }}</td>
                                     <td class="staff-actions">
+                                        {% if account.access_status != 'permanent' %}
+                                            <form method="POST" action="{{ url_for('staff_account_action', username=account.username, action='grant-permanent-access') }}">
+                                                <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
+                                                <button type="submit" class="staff-action-good">Donner l'accès permanent</button>
+                                            </form>
+                                        {% endif %}
+
                                         <form method="POST" action="{{ url_for('staff_account_action', username=account.username, action='reset-password') }}">
                                             <input type="hidden" name="csrf_token" value="{{ staff_csrf_token }}">
                                             <button type="submit">Nouveau mot de passe</button>

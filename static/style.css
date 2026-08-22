@@ -1048,6 +1048,36 @@ textarea {
 }
 
 
+.trial-access-notice {
+    display: grid;
+    gap: 5px;
+    width: min(100%, 520px);
+    margin: 0 0 22px;
+    padding: 13px 15px;
+    border: 1px solid rgba(132, 154, 255, .34);
+    border-radius: 16px;
+    color: #dfe5ff;
+    background: linear-gradient(135deg, rgba(104, 126, 255, .18), rgba(255,255,255,.05));
+    box-shadow: 0 12px 30px rgba(0,0,0,.12), inset 0 1px rgba(255,255,255,.08);
+    text-align: left;
+}
+
+.trial-access-notice span {
+    color: #afc0ff;
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+}
+
+.trial-access-notice strong {
+    color: #f2f4ff;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.45;
+}
+
+
 .message-container {
     width:
         100%;
@@ -3164,6 +3194,8 @@ textarea::placeholder {
 .staff-status i { width: 7px; height: 7px; border-radius: 50%; background: #696c75; }
 .staff-status.is-active { color: #9ff1bd; }
 .staff-status.is-active i { background: #72e9a0; box-shadow: 0 0 11px rgba(114,233,160,.75); }
+.staff-status.is-trial { color: #c7d4ff; }
+.staff-status.is-trial i { background: #9aafff; box-shadow: 0 0 11px rgba(154,175,255,.7); }
 .staff-status.is-banned { color: #ffb1b1; }
 .staff-status.is-banned i { background: #f47676; box-shadow: 0 0 11px rgba(244,118,118,.7); }
 

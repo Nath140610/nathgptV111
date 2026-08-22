@@ -84,7 +84,9 @@ class DiscordBridge:
         self._restart_requested = False
         self._result_handler = None
         self._connection_handler = None
+        self._account_action_handler = None
         self._pending_staff_notifications = []
+        self._pending_new_account_notifications = []
         self._jobs = {}
         self._channel_jobs = {}
         self._conversations = self._load_conversations()
@@ -137,6 +139,10 @@ class DiscordBridge:
         """Informe Flask lorsque la liaison Discord devient disponible."""
         self._connection_handler = handler
 
+    def set_account_action_handler(self, handler):
+        """Reçoit les validations de compte déclenchées depuis le DM staff."""
+        self._account_action_handler = handler
+
     def _report_connection(self, connected):
         handler = self._connection_handler
         if not handler:
@@ -160,6 +166,20 @@ class DiscordBridge:
 
         if can_send:
             asyncio.run_coroutine_threadsafe(self._flush_staff_notifications(), loop)
+
+    def notify_staff_new_account(self, username):
+        """Envoie/planifie le message staff de validation d'un nouveau compte."""
+        if not self.enabled:
+            raise RuntimeError("Le bot Discord n'est pas configuré.")
+
+        with self._lock:
+            if username not in self._pending_new_account_notifications:
+                self._pending_new_account_notifications.append(username)
+            loop = self._loop
+            can_send = bool(self._ready.is_set() and loop and loop.is_running())
+
+        if can_send:
+            asyncio.run_coroutine_threadsafe(self._flush_new_account_notifications(), loop)
 
     def category_has_capacity(self):
         """Vérifie la place disponible sans créer ni toucher un salon."""
@@ -215,6 +235,46 @@ class DiscordBridge:
         direct_messages = staff_user.dm_channel or await staff_user.create_dm()
         await direct_messages.send(
             f"<@{self.staff_user_id}> · {username} attend pendant une panne NathGPT."
+        )
+
+    async def _flush_new_account_notifications(self):
+        with self._lock:
+            new_accounts = list(self._pending_new_account_notifications)
+            self._pending_new_account_notifications.clear()
+
+        failed_accounts = []
+        for username in new_accounts:
+            try:
+                await self._send_staff_new_account_notification(username)
+            except Exception:
+                failed_accounts.append(username)
+
+        if failed_accounts:
+            with self._lock:
+                for username in failed_accounts:
+                    if username not in self._pending_new_account_notifications:
+                        self._pending_new_account_notifications.append(username)
+
+    async def _send_staff_new_account_notification(self, username):
+        staff_user = self._client.get_user(self.staff_user_id)
+        if staff_user is None:
+            staff_user = await self._client.fetch_user(self.staff_user_id)
+        direct_messages = staff_user.dm_channel or await staff_user.create_dm()
+
+        view = self._discord.ui.View(timeout=None)
+        view.add_item(self._discord.ui.Button(
+            label="Donner l'accès permanent",
+            style=self._discord.ButtonStyle.success,
+            custom_id=f"nathgpt-account:grant-permanent-access:{username}",
+        ))
+        view.add_item(self._discord.ui.Button(
+            label="Supprimer son compte",
+            style=self._discord.ButtonStyle.danger,
+            custom_id=f"nathgpt-account:delete:{username}",
+        ))
+        await direct_messages.send(
+            f"**{username}** vient de créer un compte. Son accès d'essai dure 1 jour.",
+            view=view,
         )
 
     def request_reconnect(self, reason=""):
@@ -465,6 +525,7 @@ class DiscordBridge:
             self._restart_requested = False
             self._report_connection(True)
             asyncio.create_task(self._flush_staff_notifications())
+            asyncio.create_task(self._flush_new_account_notifications())
             print(f"Bot Discord connecté : {client.user}", flush=True)
 
         @client.event
@@ -493,6 +554,35 @@ class DiscordBridge:
         @client.event
         async def on_message(message):
             await self._handle_message(message)
+
+        @client.event
+        async def on_interaction(interaction):
+            if interaction.type != self._discord.InteractionType.component:
+                return
+
+            custom_id = str(getattr(interaction.data, "get", lambda *_: "")("custom_id", ""))
+            if not custom_id.startswith("nathgpt-account:"):
+                return
+
+            if interaction.user.id != self.staff_user_id:
+                await interaction.response.send_message("Action réservée au staff.", ephemeral=True)
+                return
+
+            parts = custom_id.split(":", 2)
+            handler = self._account_action_handler
+            if len(parts) != 3 or not handler:
+                await interaction.response.send_message("Cette action n'est plus disponible.", ephemeral=True)
+                return
+
+            await interaction.response.defer(ephemeral=True, thinking=True)
+            result = await asyncio.to_thread(handler, parts[2], parts[1])
+            await interaction.followup.send(str(result), ephemeral=True)
+
+            if str(result).startswith(("Accès permanent accordé", "Le compte")):
+                try:
+                    await interaction.message.edit(content=f"{interaction.message.content}\n\n✅ {result}", view=None)
+                except Exception:
+                    pass
 
         @client.event
         async def on_message_edit(before, after):

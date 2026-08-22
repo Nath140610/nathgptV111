@@ -141,6 +141,7 @@ AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
 
 OUTAGE_STAFF_NOTIFICATION_COOLDOWN_SECONDS = 10 * 60
+TRIAL_ACCESS_HOURS = 24
 
 try:
     AUTOMATION_TIMEZONE = ZoneInfo("Europe/Paris")
@@ -1557,6 +1558,14 @@ def staff_account_summaries():
             "last_device": details.get("last_device", "Inconnu"),
             "active": active,
             "banned_until": get_ban_expiration(details),
+            "access_status": (
+                "trial"
+                if details.get("access_status") == "trial" and is_user_access_allowed(details)
+                else "expired"
+                if details.get("access_status") == "trial"
+                else "permanent"
+            ),
+            "trial_expires_at": get_trial_access_expiration(details),
         })
 
     accounts.sort(key=lambda account: (not account["active"], account["username"].casefold()))
@@ -1579,6 +1588,40 @@ def get_ban_expiration(user):
 
 def is_user_banned(user):
     return get_ban_expiration(user) is not None
+
+
+def get_trial_access_expiration(user):
+    """Retourne la date de fin d'essai, y compris lorsqu'elle est dépassée."""
+    if user.get("access_status") != "trial":
+        return None
+
+    value = user.get("trial_expires_at")
+    try:
+        expiration = datetime.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+    if expiration.tzinfo is None:
+        expiration = expiration.replace(tzinfo=timezone.utc)
+    return expiration
+
+
+def is_user_access_allowed(user):
+    """Les comptes historiques restent permanents ; seuls les essais expirent."""
+    if user.get("access_status") != "trial":
+        return True
+
+    expiration = get_trial_access_expiration(user)
+    return bool(expiration and expiration > datetime.now(timezone.utc))
+
+
+def access_unavailable_message(user):
+    if user.get("access_status") == "trial":
+        return (
+            "Votre accès d'essai de 1 jour est terminé. "
+            "Un membre du staff doit valider votre accès permanent."
+        )
+    return "Ce compte est temporairement indisponible."
 
 
 def revoke_user_tokens(username):
@@ -1616,6 +1659,33 @@ def remove_user_account(username):
             del conversations[conversation_owner]
     save_json(CONVERSATIONS_FILE, conversations)
     return True
+
+
+def handle_discord_staff_account_action(username, action):
+    """Exécute l'action confirmée par le bouton du message privé staff."""
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key:
+        return "Ce compte n'existe plus."
+
+    if action == "grant-permanent-access":
+        users[user_key]["access_status"] = "permanent"
+        users[user_key].pop("trial_expires_at", None)
+        users[user_key]["access_granted_at"] = utc_now()
+        save_json(USERS_FILE, users)
+        return f"Accès permanent accordé à {user_key}."
+
+    if action == "delete":
+        try:
+            remove_user_account(user_key)
+        except RuntimeError as error:
+            return f"Suppression impossible pour {user_key} : {error}"
+        return f"Le compte {user_key} a été supprimé."
+
+    return "Action de compte inconnue."
+
+
+discord_bridge.set_account_action_handler(handle_discord_staff_account_action)
 
 
 def remove_all_user_conversations(username):
@@ -1912,7 +1982,7 @@ def try_cookie_autologin():
 
         return None
 
-    if is_user_banned(users[user_key]):
+    if is_user_banned(users[user_key]) or not is_user_access_allowed(users[user_key]):
         return None
 
 
@@ -1993,7 +2063,7 @@ def try_ip_autologin():
         )
 
 
-        if ip in known_ips and not is_user_banned(info):
+        if ip in known_ips and not is_user_banned(info) and is_user_access_allowed(info):
 
             matches.append(
                 username
@@ -2050,11 +2120,11 @@ def automatic_login():
         users = load_json(USERS_FILE, {})
         user_key = find_user_key(users, session["username"])
 
-        if not user_key or is_user_banned(users[user_key]):
+        if not user_key or is_user_banned(users[user_key]) or not is_user_access_allowed(users[user_key]):
             session.clear()
             if request.path.startswith("/api/"):
-                return jsonify({"error": "Ce compte est temporairement indisponible."}), 403
-            flash("Ce compte est temporairement indisponible.", "error")
+                return jsonify({"error": access_unavailable_message(users.get(user_key, {}))}), 403
+            flash(access_unavailable_message(users.get(user_key, {})), "error")
             return redirect(url_for("login"))
 
         touch_user_activity(session["username"])
@@ -2391,6 +2461,12 @@ def register():
             "created_at":
                 utc_now(),
 
+            "access_status": "trial",
+
+            "trial_expires_at": (
+                datetime.now(timezone.utc) + timedelta(hours=TRIAL_ACCESS_HOURS)
+            ).isoformat(),
+
             "last_login_at":
                 utc_now(),
 
@@ -2424,6 +2500,16 @@ def register():
         set_login_session(
             username
         )
+
+        session["registration_notice"] = (
+            "Vous avez accès 1 jour à NathGPT en attendant la validation "
+            "d'un membre du staff pour votre accès permanent."
+        )
+
+        try:
+            discord_bridge.notify_staff_new_account(username)
+        except RuntimeError as error:
+            app.logger.warning("Alerte staff de nouveau compte non envoyée : %s", error)
 
 
         response = make_response(
@@ -2515,9 +2601,9 @@ def login():
         ]
 
 
-        if is_user_banned(user):
+        if is_user_banned(user) or not is_user_access_allowed(user):
             flash(
-                "Ce compte est temporairement indisponible.",
+                access_unavailable_message(user),
                 "error"
             )
             return render_template("login.html")
@@ -2620,6 +2706,7 @@ def chat():
         username=username,
         cricut_enabled=bool(user_key and users[user_key].get("cricut_enabled")),
         app_release=APP_RELEASE,
+        registration_notice=session.pop("registration_notice", None),
 
     )
 
@@ -2766,6 +2853,14 @@ def staff_account_action(username, action):
     user_key = find_user_key(users, username)
     if not user_key:
         flash("Compte introuvable.", "error")
+        return redirect(url_for("staff_panel"))
+
+    if action == "grant-permanent-access":
+        users[user_key]["access_status"] = "permanent"
+        users[user_key].pop("trial_expires_at", None)
+        users[user_key]["access_granted_at"] = utc_now()
+        save_json(USERS_FILE, users)
+        flash(f"Accès permanent accordé à {user_key}.", "success")
         return redirect(url_for("staff_panel"))
 
     if action == "reset-password":

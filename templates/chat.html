@@ -193,10 +193,17 @@
 
             <div
                 class="welcome"
-                id="welcome"
-            >
+            id="welcome"
+        >
 
-                <img
+            {% if registration_notice %}
+                <div class="trial-access-notice" role="status">
+                    <span>Accès d'essai activé</span>
+                    <strong>{{ registration_notice }}</strong>
+                </div>
+            {% endif %}
+
+            <img
                     src="/logo.png"
                     class="welcome-logo"
                     alt="NathGPT"
