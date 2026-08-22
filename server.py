@@ -151,6 +151,17 @@ except ZoneInfoNotFoundError:
 
 AUTOMATION_ENABLED = os.environ.get("AUTOMATION_ENABLED", "true").lower() == "true"
 
+# À modifier avec les notes associées à chaque nouvelle version publiée.
+APP_RELEASE = {
+    "version": "2026.08.22.1",
+    "title": "Mise à jour",
+    "additions": [
+        "Nouvel écran d'ouverture plus sobre",
+        "Notifications sur chaque réponse de NathGPT",
+        "Générations Cricut automatiques et dossiers datés",
+    ],
+}
+
 SECRET_FILE = DATA_DIR / "secret_key.txt"
 
 discord_bridge = DiscordBridge(DATA_DIR)
@@ -1067,6 +1078,12 @@ def save_discord_result(username, conversation_id, event):
             "assistant",
             event.get("message", "")
         )
+        send_web_push_notification(
+            username,
+            "NathGPT a répondu",
+            str(event.get("message", "Une nouvelle réponse est disponible."))[:220],
+            conversation_id,
+        )
 
     elif event.get("type") == "cricut_complete":
         images = event.get("images", [])
@@ -1411,8 +1428,54 @@ def find_user_key(users, username):
 
 
 # ============================================================
-# ENREGISTRER IP DU COMPTE
+# APPAREIL ET CONNEXION DU COMPTE
 # ============================================================
+
+def request_device_label():
+    """Produit un libellé lisible sans conserver l'empreinte complète du navigateur."""
+    user_agent = request.headers.get("User-Agent", "")
+    text = user_agent.casefold()
+
+    if "iphone" in text:
+        match = re.search(r"os ([\d_]+)", text)
+        system = f"iOS {match.group(1).replace('_', '.')}" if match else "iOS"
+        device = f"Apple iPhone · {system}"
+    elif "ipad" in text:
+        match = re.search(r"os ([\d_]+)", text)
+        system = f"iPadOS {match.group(1).replace('_', '.')}" if match else "iPadOS"
+        device = f"Apple iPad · {system}"
+    elif "android" in text:
+        match = re.search(r"android\s+([\d.]+)", text)
+        system = f"Android {match.group(1)}" if match else "Android"
+        device = system
+    elif "windows" in text:
+        device = "Windows"
+    elif "mac os x" in text or "macintosh" in text:
+        device = "Apple Mac"
+    elif "linux" in text:
+        device = "Linux"
+    else:
+        device = "Appareil inconnu"
+
+    if "edg/" in text or "edga/" in text:
+        browser = "Microsoft Edge"
+    elif "firefox/" in text:
+        browser = "Firefox"
+    elif "opr/" in text or "opera" in text:
+        browser = "Opera"
+    elif "chrome/" in text or "crios/" in text:
+        browser = "Chrome"
+    elif "safari/" in text:
+        browser = "Safari"
+    else:
+        browser = "Navigateur"
+
+    return f"{device} · {browser}"[:120]
+
+
+def record_last_device(user):
+    user["last_device"] = request_device_label()
+    user["last_device_seen_at"] = utc_now()
 
 def add_ip_to_user(
     users,
@@ -1441,6 +1504,7 @@ def add_ip_to_user(
     user["last_ip"] = ip
 
     user["last_login_at"] = utc_now()
+    record_last_device(user)
 
 
 # ============================================================
@@ -1452,16 +1516,19 @@ def touch_user_activity(username):
     now_timestamp = int(datetime.now(timezone.utc).timestamp())
     last_write = int(session.get("_activity_written_at", 0) or 0)
 
-    if now_timestamp - last_write < 60:
-        return
-
     users = load_json(USERS_FILE, {})
     user_key = find_user_key(users, username)
 
     if not user_key:
         return
 
+    current_device = request_device_label()
+    if now_timestamp - last_write < 60 and users[user_key].get("last_device") == current_device:
+        return
+
     users[user_key]["last_seen_at"] = utc_now()
+    users[user_key]["last_device"] = current_device
+    users[user_key]["last_device_seen_at"] = utc_now()
     save_json(USERS_FILE, users)
     session["_activity_written_at"] = now_timestamp
 
@@ -1487,6 +1554,7 @@ def staff_account_summaries():
             "username": username,
             "created_at": details.get("created_at", "Inconnue"),
             "last_seen_at": last_seen or "Jamais",
+            "last_device": details.get("last_device", "Inconnu"),
             "active": active,
             "banned_until": get_ban_expiration(details),
         })
@@ -2326,6 +2394,12 @@ def register():
             "last_login_at":
                 utc_now(),
 
+            "last_device":
+                request_device_label(),
+
+            "last_device_seen_at":
+                utc_now(),
+
             "last_ip":
                 ip,
 
@@ -2545,6 +2619,7 @@ def chat():
 
         username=username,
         cricut_enabled=bool(user_key and users[user_key].get("cricut_enabled")),
+        app_release=APP_RELEASE,
 
     )
 

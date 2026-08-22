@@ -138,7 +138,7 @@
                         <p>Comptes</p>
                         <h2>Activité récente</h2>
                     </div>
-                    <span class="staff-privacy">Aucune adresse MAC ou IP affichée</span>
+                    <span class="staff-privacy">Aucune adresse MAC ou IP affichée · appareil estimé via le navigateur</span>
                 </div>
 
                 <div class="staff-table-scroll">
@@ -147,6 +147,7 @@
                             <tr>
                                 <th>Compte</th>
                                 <th>Statut</th>
+                                <th>Dernier appareil</th>
                                 <th>Dernière activité</th>
                                 <th>Création</th>
                                 <th>Actions</th>
@@ -166,6 +167,7 @@
                                             {% endif %}
                                         </span>
                                     </td>
+                                    <td class="staff-device">{{ account.last_device }}</td>
                                     <td>{{ account.last_seen_at }}</td>
                                     <td>{{ account.created_at }}</td>
                                     <td class="staff-actions">
@@ -215,7 +217,7 @@
                                     </td>
                                 </tr>
                             {% else %}
-                                <tr><td colspan="5" class="staff-empty">Aucun compte pour le moment.</td></tr>
+                                <tr><td colspan="6" class="staff-empty">Aucun compte pour le moment.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

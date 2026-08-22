@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="#1c2422">
+    <meta name="theme-color" content="#f5f5f7">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="{{ url_for('static', filename='manifest.webmanifest', v=asset_version) }}">
@@ -15,9 +15,9 @@
     <!-- Évite l'écran noir/non stylé visible quelques instants par iOS avant
          le téléchargement de la feuille CSS principale. -->
     <style>
-        html { min-height: 100%; background: #1c2422; }
-        body { min-height: 100vh; margin: 0; background: #1c2422; }
-        #launchScreen { position: fixed; z-index: 9999; inset: 0; min-height: 100vh; background: #1c2422; }
+        html { min-height: 100%; background: #f5f5f7; }
+        body { min-height: 100vh; margin: 0; background: #f5f5f7; }
+        #launchScreen { position: fixed; z-index: 9999; inset: 0; min-height: 100vh; background: #f5f5f7; }
     </style>
 
     <link
@@ -62,6 +62,8 @@
     ><i><b></b></i></div>
     <div class="launch-progress-meta"><span>Initialisation</span><em id="launchPercent">0%</em></div>
 </div>
+
+<script id="appReleaseData" type="application/json">{{ app_release|tojson }}</script>
 
 <div class="app">
 
@@ -352,6 +354,38 @@ const referencePreview =
 
 
 let constellationAnimationFrame = null;
+
+const notificationSound = new Audio("/static/sonerie.mp3");
+notificationSound.preload = "auto";
+notificationSound.volume = 0.72;
+let notificationSoundUnlocked = false;
+
+function unlockNotificationSound() {
+    if (notificationSoundUnlocked) {
+        return;
+    }
+    notificationSound.muted = true;
+    notificationSound.play()
+        .then(() => {
+            notificationSound.pause();
+            notificationSound.currentTime = 0;
+            notificationSound.muted = false;
+            notificationSoundUnlocked = true;
+        })
+        .catch(() => {
+            notificationSound.muted = false;
+        });
+}
+
+function playNotificationSound() {
+    notificationSound.pause();
+    notificationSound.currentTime = 0;
+    notificationSound.play().catch(() => {
+        // Le son personnalisé en arrière-plan dépend de la politique du navigateur.
+    });
+}
+
+document.addEventListener("pointerdown", unlockNotificationSound, { once: true, passive: true });
 
 let imageRevealAnimationFrame = null;
 
@@ -1131,6 +1165,7 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
 
 
             receiveGeneratedImage(payload.url);
+            playNotificationSound();
             notifyGenerationReady(
                 "Ton image est prête",
                 "NathGPT a terminé ta génération."
@@ -1157,6 +1192,7 @@ function listenForDiscordEvents(jobId, retryAttempt = 0) {
         }
         else {
             revealThinkingResponse(payload.message || "Réponse Discord vide.");
+            playNotificationSound();
             removeImageGeneration();
         }
         loadConversations();
@@ -5169,6 +5205,7 @@ function listenForCricutEvents(jobId, retryAttempt = 0) {
 
         if (payload.type === "cricut_complete") {
             completeCricutGeneration(payload.images || []);
+            playNotificationSound();
             notifyGenerationReady(
                 "Tes stickers sont prêts",
                 "NathGPT a terminé la préparation Cricut."
@@ -5716,6 +5753,71 @@ const launchStartedAt = performance.now();
 let launchProgressFrame = null;
 let launchFinishRequested = false;
 
+function showAppUpdateIfNeeded() {
+    const releaseData = document.getElementById("appReleaseData");
+    if (!releaseData) {
+        return;
+    }
+
+    let release;
+    try {
+        release = JSON.parse(releaseData.textContent || "{}");
+    }
+    catch (_) {
+        return;
+    }
+    if (!release.version || !Array.isArray(release.additions)) {
+        return;
+    }
+
+    const storageKey = "nathgpt-release-seen";
+    try {
+        if (localStorage.getItem(storageKey) === release.version) {
+            return;
+        }
+    }
+    catch (_) {
+        // L'annonce reste visible lorsque le navigateur bloque le stockage local.
+    }
+
+    const dialog = document.createElement("section");
+    dialog.className = "app-update-dialog";
+    dialog.setAttribute("role", "dialog");
+    dialog.setAttribute("aria-modal", "true");
+    dialog.setAttribute("aria-labelledby", "appUpdateTitle");
+    const card = document.createElement("div");
+    card.className = "app-update-card";
+    const eyebrow = document.createElement("p");
+    eyebrow.textContent = `VERSION ${release.version}`;
+    const title = document.createElement("h2");
+    title.id = "appUpdateTitle";
+    title.textContent = release.title || "Mise à jour";
+    const intro = document.createElement("span");
+    intro.textContent = "Nouveautés";
+    const list = document.createElement("ul");
+    release.additions.slice(0, 6).forEach((addition) => {
+        const item = document.createElement("li");
+        item.textContent = String(addition);
+        list.appendChild(item);
+    });
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "Continuer";
+    const dismiss = () => {
+        try {
+            localStorage.setItem(storageKey, release.version);
+        }
+        catch (_) {}
+        dialog.classList.add("is-closing");
+        window.setTimeout(() => dialog.remove(), 280);
+    };
+    close.addEventListener("click", dismiss);
+    card.append(eyebrow, title, intro, list, close);
+    dialog.appendChild(card);
+    document.body.appendChild(dialog);
+    window.requestAnimationFrame(() => dialog.classList.add("is-visible"));
+}
+
 function animateLaunchProgress() {
     const percent = Math.min(
         94,
@@ -5770,7 +5872,10 @@ function finishLaunchScreen() {
     const remainingIntro = Math.max(170, 1180 - (performance.now() - launchStartedAt));
     window.setTimeout(() => {
         screen.classList.add("is-finished");
-        window.setTimeout(() => screen.remove(), 560);
+        window.setTimeout(() => {
+            screen.remove();
+            showAppUpdateIfNeeded();
+        }, 560);
     }, remainingIntro);
 }
 
