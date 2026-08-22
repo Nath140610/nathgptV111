@@ -259,6 +259,7 @@ class DiscordBridge:
         question,
         reference_images=None,
         expects_image=False,
+        metadata=None,
     ):
         """Envoie une question et retourne immédiatement l'identifiant de son flux."""
         if not self.enabled:
@@ -287,6 +288,7 @@ class DiscordBridge:
                 "conversation_id": conversation_id,
                 "conversation_key": f"{username.casefold()}:{conversation_id}",
                 "kind": "chat",
+                "metadata": dict(metadata or {}),
                 "expects_image": bool(expects_image),
                 "text_messages": {},
                 "text_message_order": [],
@@ -321,7 +323,14 @@ class DiscordBridge:
 
         return job_id
 
-    def start_cricut_job(self, username, image):
+    def start_cricut_job(
+        self,
+        username,
+        image,
+        metadata=None,
+        conversation_id=None,
+        reuse_channel=False,
+    ):
         """Envoie une image Ã  dÃ©composer dans un salon Cricut dÃ©diÃ©."""
         if not self.enabled:
             raise RuntimeError("Discord n'est pas configurÃ© : DISCORD_TOKEN est manquant.")
@@ -337,7 +346,7 @@ class DiscordBridge:
             )
 
         job_id = uuid.uuid4().hex
-        conversation_id = f"cricut-{job_id[:12]}"
+        conversation_id = conversation_id or f"cricut-{job_id[:12]}"
         with self._lock:
             self._jobs[job_id] = {
                 "events": Queue(),
@@ -345,6 +354,7 @@ class DiscordBridge:
                 "conversation_id": conversation_id,
                 "conversation_key": f"{username.casefold()}:{conversation_id}",
                 "kind": "cricut",
+                "metadata": dict(metadata or {}),
                 "cricut_total": 0,
                 "cricut_current": 0,
                 "cricut_images": [],
@@ -352,7 +362,13 @@ class DiscordBridge:
             }
 
         future = asyncio.run_coroutine_threadsafe(
-            self._send_cricut_job(job_id, username, conversation_id, image),
+            self._send_cricut_job(
+                job_id,
+                username,
+                conversation_id,
+                image,
+                reuse_channel=bool(reuse_channel),
+            ),
             self._loop,
         )
         try:
@@ -573,6 +589,43 @@ class DiscordBridge:
             )
         return len(deleted_ids)
 
+    def delete_non_cricut_category_channels(self):
+        """Nettoie les salons de discussion en gardant les salons Cricut."""
+        if not self.enabled or not self._ready.is_set() or not self._loop:
+            raise RuntimeError(
+                "Le bot Discord doit Ãªtre connectÃ© pour nettoyer les salons."
+            )
+
+        future = asyncio.run_coroutine_threadsafe(
+            self._delete_non_cricut_category_channels(),
+            self._loop,
+        )
+        try:
+            deleted_ids, failed_count = future.result(timeout=90)
+        except Exception as error:
+            raise RuntimeError(
+                "Impossible de nettoyer les salons Discord non Cricut."
+            ) from error
+
+        with self._lock:
+            removed_keys = [
+                key for key, channel_id in self._conversations.items()
+                if channel_id in deleted_ids
+            ]
+            for key in removed_keys:
+                self._conversations.pop(key, None)
+                self._image_messages.pop(key, None)
+            for channel_id in deleted_ids:
+                self._channel_jobs.pop(channel_id, None)
+            self._save_conversations()
+            self._save_image_messages()
+
+        if failed_count:
+            raise RuntimeError(
+                f"{len(deleted_ids)} salon(s) supprimÃ©(s), mais {failed_count} n'ont pas pu Ãªtre supprimÃ©s."
+            )
+        return len(deleted_ids)
+
     async def _delete_configured_category_channels(self):
         category = self._client.get_channel(self.category_id)
         if category is None:
@@ -585,6 +638,34 @@ class DiscordBridge:
         for channel in list(category.channels):
             try:
                 await channel.delete(reason="Nettoyage global demandé depuis le panneau staff NathGPT")
+                deleted_ids.append(channel.id)
+            except self._discord.NotFound:
+                deleted_ids.append(channel.id)
+            except self._discord.HTTPException:
+                failed_count += 1
+
+        return deleted_ids, failed_count
+
+    async def _delete_non_cricut_category_channels(self):
+        category = self._client.get_channel(self.category_id)
+        if category is None:
+            category = await self._client.fetch_channel(self.category_id)
+        if not isinstance(category, self._discord.CategoryChannel):
+            raise RuntimeError("DISCORD_CATEGORY_ID ne correspond pas Ã  une catÃ©gorie Discord.")
+
+        deleted_ids = []
+        failed_count = 0
+        for channel in list(category.channels):
+            channel_name = str(getattr(channel, "name", "")).casefold()
+            channel_topic = str(getattr(channel, "topic", "")).casefold()
+            is_cricut = (
+                channel_name.startswith("cricut-")
+                or "cricut" in channel_topic
+            )
+            if is_cricut:
+                continue
+            try:
+                await channel.delete(reason="Nettoyage quotidien NathGPT : conservation des salons Cricut")
                 deleted_ids.append(channel.id)
             except self._discord.NotFound:
                 deleted_ids.append(channel.id)
@@ -694,19 +775,29 @@ class DiscordBridge:
             )
         self._publish(job_id, {"type": "status", "message": "Demande envoyée au moteur d'image..."})
 
-    async def _send_cricut_job(self, job_id, username, conversation_id, image):
+    async def _send_cricut_job(
+        self,
+        job_id,
+        username,
+        conversation_id,
+        image,
+        reuse_channel=False,
+    ):
         category = self._client.get_channel(self.category_id)
         if category is None:
             category = await self._client.fetch_channel(self.category_id)
         if not isinstance(category, self._discord.CategoryChannel):
             raise RuntimeError("DISCORD_CATEGORY_ID ne correspond pas à une catégorie Discord.")
 
-        safe_user = re.sub(r"[^a-z0-9-]+", "-", username.casefold()).strip("-") or "utilisateur"
-        channel = await category.create_text_channel(
-            f"cricut-{safe_user}-{conversation_id[-8:]}"[:100],
-            topic=f"Décomposition Cricut de {username}",
-            reason="Nouvelle demande Cricut NathGPT",
-        )
+        if reuse_channel:
+            channel = await self._get_or_create_channel(username, conversation_id)
+        else:
+            safe_user = re.sub(r"[^a-z0-9-]+", "-", username.casefold()).strip("-") or "utilisateur"
+            channel = await category.create_text_channel(
+                f"cricut-{safe_user}-{conversation_id[-8:]}"[:100],
+                topic=f"Décomposition Cricut de {username}",
+                reason="Nouvelle demande Cricut NathGPT",
+            )
 
         with self._lock:
             self._conversations[f"{username.casefold()}:{conversation_id}"] = channel.id
@@ -749,11 +840,24 @@ class DiscordBridge:
             raise RuntimeError("DISCORD_CATEGORY_ID ne correspond pas à une catégorie Discord.")
 
         safe_user = re.sub(r"[^a-z0-9-]+", "-", username.casefold()).strip("-") or "utilisateur"
-        channel_name = f"nathgpt-{safe_user}-{conversation_id[:8]}"[:100]
+        is_cricut = conversation_id.startswith("cricut-")
+        channel_name = (
+            f"cricut-{safe_user}-{conversation_id[-8:]}"
+            if is_cricut
+            else f"nathgpt-{safe_user}-{conversation_id[:8]}"
+        )[:100]
         channel = await category.create_text_channel(
             channel_name,
-            topic=f"Conversation NathGPT de {username}",
-            reason="Nouvelle conversation NathGPT",
+            topic=(
+                f"Décomposition Cricut de {username}"
+                if is_cricut
+                else f"Conversation NathGPT de {username}"
+            ),
+            reason=(
+                "Nouvelle demande Cricut NathGPT"
+                if is_cricut
+                else "Nouvelle conversation NathGPT"
+            ),
         )
 
         with self._lock:
@@ -1044,6 +1148,7 @@ class DiscordBridge:
                 result_context = (
                     job["username"],
                     job["conversation_id"],
+                    dict(job.get("metadata") or {}),
                 )
                 for channel_id, active_job_id in list(self._channel_jobs.items()):
                     if active_job_id == job_id:
@@ -1057,10 +1162,13 @@ class DiscordBridge:
                 cleanup_timer.start()
 
         if result_handler and result_context:
+            enriched_event = dict(event)
+            if result_context[2]:
+                enriched_event["_job_metadata"] = result_context[2]
             result_handler(
                 result_context[0],
                 result_context[1],
-                event,
+                enriched_event,
             )
 
     def _forget_job(self, job_id):

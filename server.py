@@ -28,10 +28,12 @@ import os
 import re
 import secrets
 import threading
+import time
 import unicodedata
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from discord_bridge import DiscordBridge
 
@@ -131,9 +133,22 @@ TOKENS_FILE = DATA_DIR / "tokens.json"
 
 CONVERSATIONS_FILE = DATA_DIR / "conversations.json"
 
+AUTOMATIC_GENERATIONS_FILE = DATA_DIR / "automatic_generations.json"
+
+AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
+
 SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
 
 OUTAGE_STAFF_NOTIFICATION_COOLDOWN_SECONDS = 10 * 60
+
+try:
+    AUTOMATION_TIMEZONE = ZoneInfo("Europe/Paris")
+except ZoneInfoNotFoundError:
+    # Windows ne fournit pas toujours la base IANA avant l'installation de
+    # tzdata. Le repli utilise le fuseau local et évite de bloquer le serveur.
+    AUTOMATION_TIMEZONE = datetime.now().astimezone().tzinfo or timezone.utc
+
+AUTOMATION_ENABLED = os.environ.get("AUTOMATION_ENABLED", "true").lower() == "true"
 
 SECRET_FILE = DATA_DIR / "secret_key.txt"
 
@@ -507,6 +522,166 @@ def delete_conversation(username, conversation_id):
         save_json(CONVERSATIONS_FILE, conversations)
 
 
+def is_cricut_conversation(conversation):
+    """Les discussions Cricut restent conservées malgré le nettoyage quotidien."""
+    if not isinstance(conversation, dict):
+        return False
+    if str(conversation.get("id", "")).startswith("cricut-"):
+        return True
+    return any(
+        isinstance(message, dict) and message.get("cricut_images")
+        for message in conversation.get("messages", [])
+    )
+
+
+def delete_all_non_cricut_conversations():
+    """Efface l'historique ordinaire de chaque compte sans toucher à Cricut."""
+    conversations = load_json(CONVERSATIONS_FILE, {})
+    if not isinstance(conversations, dict):
+        return 0
+
+    deleted_count = 0
+    changed = False
+    for username in list(conversations):
+        items = conversations.get(username, [])
+        if not isinstance(items, list):
+            continue
+        kept_items = [item for item in items if is_cricut_conversation(item)]
+        deleted_count += len(items) - len(kept_items)
+        if len(kept_items) != len(items):
+            changed = True
+        if kept_items:
+            conversations[username] = kept_items
+        else:
+            conversations.pop(username, None)
+
+    if changed:
+        save_json(CONVERSATIONS_FILE, conversations)
+    return deleted_count
+
+
+def get_automatic_generations(username):
+    all_generations = load_json(AUTOMATIC_GENERATIONS_FILE, {})
+    if not isinstance(all_generations, dict):
+        return []
+    owner_key = next(
+        (key for key in all_generations if key.casefold() == username.casefold()),
+        None,
+    )
+    items = all_generations.get(owner_key, []) if owner_key else []
+    if not isinstance(items, list):
+        return []
+    return list(reversed(items))
+
+
+def save_automatic_generation(username, generation):
+    all_generations = load_json(AUTOMATIC_GENERATIONS_FILE, {})
+    if not isinstance(all_generations, dict):
+        all_generations = {}
+
+    owner_key = next(
+        (key for key in all_generations if key.casefold() == username.casefold()),
+        username,
+    )
+    items = all_generations.setdefault(owner_key, [])
+    generation_id = str(generation.get("id", ""))
+    existing = next(
+        (item for item in items if item.get("id") == generation_id),
+        None,
+    )
+    if existing is None:
+        items.append(generation)
+    else:
+        existing.update(generation)
+
+    # Une année complète est largement suffisante et garde le disque léger.
+    all_generations[owner_key] = items[-366:]
+    save_json(AUTOMATIC_GENERATIONS_FILE, all_generations)
+
+
+def mark_automatic_generation_opened(username, generation_id):
+    all_generations = load_json(AUTOMATIC_GENERATIONS_FILE, {})
+    if not isinstance(all_generations, dict):
+        return False
+    owner_key = next(
+        (key for key in all_generations if key.casefold() == username.casefold()),
+        None,
+    )
+    if not owner_key:
+        return False
+    for item in all_generations.get(owner_key, []):
+        if item.get("id") == generation_id:
+            if not item.get("opened_at"):
+                item["opened_at"] = utc_now()
+                save_json(AUTOMATIC_GENERATIONS_FILE, all_generations)
+            return True
+    return False
+
+
+AUTOMATIC_STICKER_THEMES = (
+    ("football", "Football : ballon, maillot, trophée, sifflet, terrain et supporters"),
+    ("cinema", "Cinéma et séries : clap, popcorn, caméra, tickets et étoiles"),
+    ("voyage", "Voyage : valise, avion, carte, appareil photo et soleil"),
+    ("musique", "Musique : casque, vinyle, guitare, micro et notes colorées"),
+    ("gaming", "Jeux vidéo : manette, console rétro, joystick, trophée et pixels"),
+    ("nature", "Nature : fleurs, feuilles, champignons, papillons et arc-en-ciel"),
+    ("gourmand", "Gourmandises : pâtisseries, fraises, café, glace et petits gâteaux"),
+)
+
+
+def daily_theme_for(date_value, previous_theme_id=""):
+    """Choisit un thème saisonnier ou populaire sans répétition consécutive."""
+    month_day = (date_value.month, date_value.day)
+    seasonal = None
+    if month_day == (1, 1):
+        seasonal = ("nouvel-an", "Nouvel An : confettis, feux d'artifice, chiffres de l'année et cotillons")
+    elif date_value.month == 2 and 8 <= date_value.day <= 16:
+        seasonal = ("saint-valentin", "Saint-Valentin : coeurs, fleurs, lettres d'amour et rubans")
+    elif date_value.month in {3, 4}:
+        seasonal = ("printemps", "Printemps : fleurs, pluie douce, abeilles, pousses et jardin")
+    elif date_value.month == 10:
+        seasonal = ("halloween", "Halloween : citrouilles, fantômes mignons, bonbons, chauves-souris et lunes")
+    elif date_value.month == 12:
+        seasonal = ("hiver", "Fêtes d'hiver : flocons, cadeaux, chocolat chaud, étoiles et sapins")
+
+    if seasonal and seasonal[0] != previous_theme_id:
+        return seasonal
+
+    index = date_value.toordinal() % len(AUTOMATIC_STICKER_THEMES)
+    theme = AUTOMATIC_STICKER_THEMES[index]
+    if theme[0] == previous_theme_id:
+        theme = AUTOMATIC_STICKER_THEMES[(index + 1) % len(AUTOMATIC_STICKER_THEMES)]
+    return theme
+
+
+def automatic_sheet_prompt(theme_label):
+    return (
+        "Génère une planche de stickers style scrapbooking, prête à découper, "
+        "sur fond blanc propre. Thème du jour : " + theme_label + ". "
+        "Compose 12 illustrations distinctes, couleurs vives, contours très fins, "
+        "sans texte, sans watermark et avec chaque sticker bien séparé."
+    )
+
+
+def download_automatic_source_image(image_url):
+    """Télécharge l'image générée afin de l'envoyer au flux Cricut."""
+    parsed = urlparse(str(image_url or ""))
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("URL d'image automatique invalide.")
+    request_object = Request(
+        image_url,
+        headers={"User-Agent": "NathGPT automation"},
+    )
+    with urlopen(request_object, timeout=45) as response:
+        content_type = str(response.headers.get("Content-Type", "")).lower()
+        data = response.read(8 * 1024 * 1024 + 1)
+    if len(data) > 8 * 1024 * 1024 or not data:
+        raise ValueError("L'image automatique est trop grande ou vide.")
+    if content_type and not content_type.startswith("image/"):
+        raise ValueError("Le résultat automatique n'est pas une image.")
+    return data
+
+
 def is_image_generation_request(question, has_reference_images=False):
     """DÃ©termine cÃ´tÃ© serveur si le rÃ©sultat attendu est une image."""
     if has_reference_images:
@@ -701,7 +876,68 @@ def send_web_push_notification(username, title, body, conversation_id=None):
         save_json(USERS_FILE, users)
 
 
+def start_automatic_cricut_from_image(username, image_url, metadata):
+    """Enchaîne la découpe Cricut sans bloquer la boucle Discord."""
+    try:
+        source_data = download_automatic_source_image(image_url)
+        automatic_date = str(metadata.get("automatic_date", ""))
+        source_image = {
+            "filename": f"planche-scrapbooking-{automatic_date or 'du-jour'}.png",
+            "data": source_data,
+        }
+        cricut_metadata = {
+            "automation": "daily-cricut",
+            "automatic_date": automatic_date,
+            "theme_id": str(metadata.get("theme_id", "")),
+            "theme_label": str(metadata.get("theme_label", "")),
+            "source_image_url": str(image_url),
+        }
+        automatic_conversation_id = (
+            "cricut-auto-"
+            + hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:12]
+        )
+        discord_bridge.start_cricut_job(
+            username,
+            source_image,
+            cricut_metadata,
+            conversation_id=automatic_conversation_id,
+            reuse_channel=True,
+        )
+    except Exception:
+        app.logger.exception("Impossible de lancer la découpe Cricut automatique")
+        send_web_push_notification(
+            username,
+            "La génération automatique a besoin d'aide",
+            "La planche a été créée, mais son adaptation Cricut n'a pas démarré.",
+        )
+
+
+def save_daily_automatic_generation(username, event):
+    metadata = event.get("_job_metadata", {})
+    automatic_date = str(metadata.get("automatic_date", ""))
+    images = [
+        str(url)[:2000]
+        for url in event.get("images", [])
+        if str(url).strip()
+    ][:300]
+    if not automatic_date or not images:
+        return
+    save_automatic_generation(username, {
+        "id": f"auto-{automatic_date}",
+        "date": automatic_date,
+        "title": f"Planche automatique · {metadata.get('theme_label', 'Scrapbooking')}",
+        "theme_id": str(metadata.get("theme_id", "")),
+        "theme_label": str(metadata.get("theme_label", "")),
+        "source_image_url": str(metadata.get("source_image_url", ""))[:2000],
+        "images": images,
+        "created_at": utc_now(),
+        "opened_at": None,
+    })
+
+
 def save_discord_result(username, conversation_id, event):
+
+    metadata = event.get("_job_metadata", {})
 
     if event.get("type") == "image":
         save_conversation_message(
@@ -717,6 +953,14 @@ def save_discord_result(username, conversation_id, event):
             "NathGPT a terminé ta génération.",
             conversation_id,
         )
+        if metadata.get("automation") == "daily-sheet":
+            worker = threading.Thread(
+                target=start_automatic_cricut_from_image,
+                args=(username, event.get("url", ""), metadata),
+                name="nathgpt-auto-cricut",
+                daemon=True,
+            )
+            worker.start()
 
     elif event.get("type") == "text":
         save_conversation_message(
@@ -741,6 +985,8 @@ def save_discord_result(username, conversation_id, event):
             f"{len(images)} image(s) sont prêtes à télécharger.",
             conversation_id,
         )
+        if metadata.get("automation") == "daily-cricut":
+            save_daily_automatic_generation(username, event)
 
     elif event.get("type") == "error":
         set_service_outage("API-DISCORD")
@@ -756,6 +1002,151 @@ discord_bridge.set_result_handler(
 discord_bridge.set_connection_handler(
     handle_discord_connection_change
 )
+
+
+# ============================================================
+# AUTOMATISATIONS QUOTIDIENNES
+# ============================================================
+
+_automation_thread = None
+_automation_thread_lock = threading.Lock()
+
+
+def load_automation_state():
+    state = load_json(AUTOMATION_STATE_FILE, {})
+    return state if isinstance(state, dict) else {}
+
+
+def save_automation_state(state):
+    save_json(AUTOMATION_STATE_FILE, state)
+
+
+def run_midnight_cleanup(date_key):
+    """Supprime l'historique ordinaire et les salons Discord non Cricut."""
+    state = load_automation_state()
+    day_state = state.setdefault("days", {}).setdefault(date_key, {})
+    if day_state.get("cleanup_completed"):
+        return
+
+    deleted_history = delete_all_non_cricut_conversations()
+    try:
+        deleted_channels = discord_bridge.delete_non_cricut_category_channels()
+    except RuntimeError:
+        # Le nettoyage local a déjà eu lieu. On réessaiera les salons Discord
+        # au prochain passage tant que le bot n'est pas reconnecté.
+        app.logger.exception("Nettoyage quotidien Discord reporté")
+        return
+
+    day_state["cleanup_completed"] = True
+    day_state["cleanup_at"] = utc_now()
+    day_state["deleted_history"] = deleted_history
+    day_state["deleted_discord_channels"] = deleted_channels
+    save_automation_state(state)
+
+
+def start_daily_automatic_generations(date_value):
+    """Lance une planche puis sa découpe Cricut pour chaque compte éligible."""
+    date_key = date_value.isoformat()
+    state = load_automation_state()
+    day_state = state.setdefault("days", {}).setdefault(date_key, {})
+    if day_state.get("automation_skipped_on_first_start"):
+        return
+    previous_theme_id = str(state.get("last_theme_id", ""))
+    theme_id = str(day_state.get("theme_id", ""))
+    theme_label = str(day_state.get("theme_label", ""))
+    if not theme_id or not theme_label:
+        theme_id, theme_label = daily_theme_for(date_value, previous_theme_id)
+        day_state["theme_id"] = theme_id
+        day_state["theme_label"] = theme_label
+
+    started_users = set(day_state.get("started_users", []))
+    users = load_json(USERS_FILE, {})
+    if not isinstance(users, dict):
+        return
+
+    for username, details in users.items():
+        if not isinstance(details, dict) or not details.get("cricut_enabled"):
+            continue
+        if username.casefold() in started_users:
+            continue
+
+        safe_user = hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:12]
+        conversation_id = f"auto-{date_value.strftime('%Y%m%d')}-{safe_user}"
+        metadata = {
+            "automation": "daily-sheet",
+            "automatic_date": date_key,
+            "theme_id": theme_id,
+            "theme_label": theme_label,
+        }
+        try:
+            save_conversation_message(
+                username,
+                conversation_id,
+                "user",
+                f"Planche automatique du {date_value.strftime('%d/%m/%Y')} · {theme_label}",
+            )
+            discord_bridge.start_turn(
+                username,
+                conversation_id,
+                automatic_sheet_prompt(theme_label),
+                expects_image=True,
+                metadata=metadata,
+            )
+        except Exception:
+            app.logger.exception("Impossible de lancer la génération automatique pour %s", username)
+            continue
+
+        started_users.add(username.casefold())
+        day_state["started_users"] = sorted(started_users)
+        day_state["started_at"] = utc_now()
+        state["last_theme_id"] = theme_id
+        save_automation_state(state)
+
+
+def automation_loop():
+    """Rattrape un redémarrage puis déclenche minuit et 01:00, heure de Paris."""
+    while True:
+        try:
+            now = datetime.now(AUTOMATION_TIMEZONE)
+            date_value = now.date()
+            date_key = date_value.isoformat()
+            state = load_automation_state()
+            if not state.get("scheduler_initialized"):
+                # Au premier déploiement, on attend le prochain minuit plutôt
+                # que d'effacer l'historique en plein milieu de journée.
+                state["scheduler_initialized"] = True
+                state.setdefault("days", {}).setdefault(date_key, {})["cleanup_completed"] = True
+                state["days"][date_key]["cleanup_at"] = utc_now()
+                if now.hour >= 1:
+                    state["days"][date_key]["automation_skipped_on_first_start"] = True
+                save_automation_state(state)
+            day_state = state.get("days", {}).get(date_key, {}) if isinstance(state.get("days"), dict) else {}
+
+            if not day_state.get("cleanup_completed"):
+                run_midnight_cleanup(date_key)
+            if now.hour >= 1:
+                start_daily_automatic_generations(date_value)
+        except Exception:
+            app.logger.exception("Erreur dans l'automatisation quotidienne")
+
+        # Une vérification toutes les 30 secondes permet de rattraper un
+        # redémarrage sans dériver de l'heure de Paris.
+        time.sleep(30)
+
+
+def start_automation_service():
+    global _automation_thread
+    if not AUTOMATION_ENABLED:
+        return
+    with _automation_thread_lock:
+        if _automation_thread and _automation_thread.is_alive():
+            return
+        _automation_thread = threading.Thread(
+            target=automation_loop,
+            name="nathgpt-daily-automation",
+            daemon=True,
+        )
+        _automation_thread.start()
 
 
 # ============================================================
@@ -840,6 +1231,7 @@ def start_runtime_services():
             "true"
         ).lower() == "true":
             discord_bridge.start()
+        start_automation_service()
 
 
 # Gunicorn importe ce module au démarrage : le bot se lance également
@@ -2517,6 +2909,37 @@ def conversation_detail(conversation_id):
         return jsonify({"error": "Discussion introuvable."}), 404
 
     return jsonify({"conversation": conversation})
+
+
+@app.route("/api/automatic-generations")
+def automatic_generations():
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key or not users[user_key].get("cricut_enabled"):
+        return jsonify({"error": "Le mode Cricut n'est pas activé sur ce compte."}), 403
+
+    return jsonify({"generations": get_automatic_generations(user_key)})
+
+
+@app.route("/api/automatic-generations/<generation_id>/opened", methods=["POST"])
+def automatic_generation_opened(generation_id):
+    username = session.get("username")
+    if not username:
+        return jsonify({"error": "Connexion requise."}), 401
+    if not re.fullmatch(r"auto-\d{4}-\d{2}-\d{2}", generation_id):
+        return jsonify({"error": "Identifiant de génération invalide."}), 400
+
+    users = load_json(USERS_FILE, {})
+    user_key = find_user_key(users, username)
+    if not user_key or not users[user_key].get("cricut_enabled"):
+        return jsonify({"error": "Le mode Cricut n'est pas activé sur ce compte."}), 403
+    if not mark_automatic_generation_opened(user_key, generation_id):
+        return jsonify({"error": "Génération introuvable."}), 404
+    return jsonify({"ok": True})
 
 
 # ============================================================

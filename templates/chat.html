@@ -91,6 +91,13 @@
         >
             ✦ Adapter des stickers
         </button>
+        <button
+            class="automatic-generation-entry"
+            type="button"
+            onclick="openAutomaticGenerations()"
+        >
+            ✧ Générations automatiques
+        </button>
         {% endif %}
 
         <div class="history">
@@ -297,6 +304,7 @@
             <button type="button" class="mobile-history-new" onclick="newChat()">＋ Nouvelle discussion</button>
             {% if cricut_enabled %}
             <button type="button" class="mobile-cricut-entry" onclick="openCricutUploader()">✦ Adapter des stickers</button>
+            <button type="button" class="mobile-automatic-generation-entry" onclick="openAutomaticGenerations()">✧ Générations automatiques</button>
             {% endif %}
             <div class="mobile-history-list" id="mobileHistoryList"></div>
             <a class="mobile-history-settings" href="{{ url_for('settings') }}">⚙ Paramètres</a>
@@ -1530,6 +1538,9 @@ async function notifyGenerationReady(title, body) {
     }
 
     try {
+        if (navigator.vibrate) {
+            navigator.vibrate([120, 55, 120]);
+        }
         const registration = await navigator.serviceWorker.ready;
         await registration.showNotification(title, {
             body,
@@ -1537,6 +1548,7 @@ async function notifyGenerationReady(title, body) {
             badge: "/logo.png",
             tag: "nathgpt-generation-ready",
             renotify: true,
+            vibrate: [120, 55, 120],
             data: { url: window.location.pathname }
         });
     }
@@ -1715,6 +1727,145 @@ function closeMobileHistory() {
     overlay.classList.remove("is-open");
     overlay.setAttribute("aria-hidden", "true");
     document.body.classList.remove("mobile-history-open");
+}
+
+
+function formatAutomaticGenerationDate(value) {
+    const date = new Date(`${value}T12:00:00`);
+    if (Number.isNaN(date.getTime())) {
+        return value;
+    }
+    return new Intl.DateTimeFormat("fr-FR", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+    }).format(date);
+}
+
+
+async function openAutomaticGenerations() {
+    if (isDiscordTurnActive) {
+        return;
+    }
+
+    closeMobileHistory();
+    try {
+        const response = await fetch("/api/automatic-generations", { cache: "no-store" });
+        if (!response.ok) {
+            throw new Error("Impossible de charger les générations automatiques.");
+        }
+        const payload = await response.json();
+        renderAutomaticGenerationFolders(payload.generations || []);
+    }
+    catch (error) {
+        messages.innerHTML = "";
+        welcome.style.display = "none";
+        addAssistantMessage(error.message || "Impossible de charger les générations automatiques.");
+    }
+}
+
+
+function renderAutomaticGenerationFolders(generations) {
+    messages.innerHTML = "";
+    welcome.style.display = "none";
+
+    const panel = document.createElement("section");
+    panel.className = "automatic-generations-panel";
+    const heading = document.createElement("div");
+    heading.className = "automatic-generations-heading";
+    const icon = document.createElement("span");
+    icon.textContent = "✧";
+    const copy = document.createElement("div");
+    const title = document.createElement("h2");
+    title.textContent = "Générations automatiques";
+    const intro = document.createElement("p");
+    intro.textContent = "Chaque nuit, une planche scrapbooking est générée puis adaptée en stickers Cricut.";
+    copy.append(title, intro);
+    heading.append(icon, copy);
+    panel.appendChild(heading);
+
+    if (!generations.length) {
+        const empty = document.createElement("p");
+        empty.className = "automatic-generations-empty";
+        empty.textContent = "La première planche automatique apparaîtra après la prochaine génération nocturne.";
+        panel.appendChild(empty);
+    }
+    else {
+        const folders = document.createElement("div");
+        folders.className = "automatic-generation-folders";
+        for (const generation of generations) {
+            const folder = document.createElement("button");
+            folder.type = "button";
+            folder.className = "automatic-generation-folder";
+            if (!generation.opened_at) {
+                folder.classList.add("is-unread");
+            }
+            const folderIcon = document.createElement("span");
+            folderIcon.className = "automatic-folder-icon";
+            folderIcon.textContent = "▰";
+            const folderCopy = document.createElement("span");
+            const date = document.createElement("strong");
+            date.textContent = formatAutomaticGenerationDate(generation.date || "");
+            const theme = document.createElement("small");
+            theme.textContent = generation.theme_label || "Planche scrapbooking";
+            folderCopy.append(date, theme);
+            const count = document.createElement("em");
+            count.textContent = `${(generation.images || []).length} stickers`;
+            folder.append(folderIcon, folderCopy, count);
+            folder.addEventListener("click", () => openAutomaticGenerationFolder(generation));
+            folders.appendChild(folder);
+        }
+        panel.appendChild(folders);
+    }
+
+    messages.appendChild(panel);
+    scrollToBottom();
+}
+
+
+async function openAutomaticGenerationFolder(generation) {
+    try {
+        await fetch(
+            `/api/automatic-generations/${encodeURIComponent(generation.id)}/opened`,
+            { method: "POST" }
+        );
+    }
+    catch (_) {
+        // L'ouverture reste disponible même si la marque « non lu » ne peut pas être synchronisée.
+    }
+
+    messages.innerHTML = "";
+    const detail = document.createElement("section");
+    detail.className = "automatic-generation-detail";
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "automatic-generation-back";
+    back.textContent = "← Toutes les générations";
+    back.addEventListener("click", openAutomaticGenerations);
+    const title = document.createElement("h2");
+    title.textContent = formatAutomaticGenerationDate(generation.date || "");
+    const subtitle = document.createElement("p");
+    subtitle.textContent = generation.theme_label || "Planche scrapbooking";
+    detail.append(back, title, subtitle);
+
+    const gallery = document.createElement("div");
+    gallery.className = "automatic-sticker-gallery";
+    for (const [index, url] of (generation.images || []).entries()) {
+        const link = document.createElement("a");
+        link.href = url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.title = `Ouvrir le sticker ${index + 1}`;
+        const image = document.createElement("img");
+        image.src = url;
+        image.alt = `Sticker automatique ${index + 1}`;
+        image.loading = "lazy";
+        link.appendChild(image);
+        gallery.appendChild(link);
+    }
+    detail.appendChild(gallery);
+    messages.appendChild(detail);
+    scrollToBottom();
 }
 
 
