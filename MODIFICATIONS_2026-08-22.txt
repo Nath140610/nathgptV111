@@ -36,3 +36,8 @@ NathGPT - correctifs et animations (22/08/2026)
 - V8 : écran de chargement central entièrement circulaire (suppression de l'effet carte carrée).
 - V8 : Historique des générations et Mes statistiques regroupés dans Paramètres.
 - V8 : boutons et interactions tactiles accélérés avec feedback de pression immédiat.
+
+- V9 : stabilisation responsive/anti-superposition (modales, tiroir mobile, composer, toasts, changelog, staff, safe-area iPhone) et suppression de l'ancien historique modal du chat.
+
+- V10 : suppression du partage public de conversations.
+- V10 : générations automatiques quotidiennes à 01:00 ET 02:30 (Europe/Paris), avec états séparés et sans rattrapage rétroactif lors de la mise à niveau.

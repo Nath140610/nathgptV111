@@ -83,25 +83,6 @@
             </div>
         </section>
 
-        <section class="settings-card settings-shares">
-            <p class="settings-eyebrow">Partage</p>
-            <h2>Liens de conversation actifs</h2>
-            <p>Tu peux couper immédiatement un lien partagé avant sa date d'expiration.</p>
-            <div class="settings-share-list">
-                {% for share in active_shares %}
-                    <article>
-                        <div><strong>{{ share.title or "Conversation" }}</strong><small>Expire le {{ share.expires_at }}</small></div>
-                        <form method="POST" action="{{ url_for('revoke_share', token=share.token) }}">
-                            <input type="hidden" name="csrf_token" value="{{ settings_csrf_token }}">
-                            <button type="submit">Révoquer</button>
-                        </form>
-                    </article>
-                {% else %}
-                    <div class="settings-empty-state">Aucun lien de partage actif.</div>
-                {% endfor %}
-            </div>
-        </section>
-
         <section class="settings-card settings-notifications">
             <p class="settings-eyebrow">Notifications</p>
             <h2>Me prévenir quand c'est prêt</h2>

@@ -132,10 +132,6 @@ SUPABASE_BUG_REPORTS_TABLE = os.environ.get(
     "nathgpt_bug_reports",
 ).strip() or "nathgpt_bug_reports"
 
-SUPABASE_SHARES_TABLE = os.environ.get(
-    "SUPABASE_SHARES_TABLE",
-    "nathgpt_conversation_shares",
-).strip() or "nathgpt_conversation_shares"
 SUPABASE_APP_STATE_TABLE = os.environ.get(
     "SUPABASE_APP_STATE_TABLE",
     "nathgpt_app_state",
@@ -158,7 +154,6 @@ AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 
 SERVICE_STATUS_FILE = DATA_DIR / "service_status.json"
 BUG_REPORTS_FILE = DATA_DIR / "bug_reports.json"
-SHARE_LINKS_FILE = DATA_DIR / "conversation_shares.json"
 
 FEATURE_MAINTENANCE_DEFAULTS = {
     "text_generation": {
@@ -214,11 +209,10 @@ APP_RELEASES = [
     {
         "version": "2026.08.22.3",
         "date": "2026-08-22T18:38:00+02:00",
-        "title": "Historique, partage et outils staff",
+        "title": "Historique et outils staff",
         "additions": [
             "Historique avancé des générations avec recherche et filtres",
             "Signalement de bugs depuis le chat",
-            "Partage temporaire d'une conversation par lien public",
             "Connexion staff temporaire à un compte utilisateur",
             "Retour haptique sur les appareils compatibles",
             "Nouvel écran de chargement premium",
@@ -243,7 +237,6 @@ APP_RELEASES.append({
     "date": "2026-08-22T18:55:00+02:00",
     "additions": [
         "Conversations épinglables en haut de l'historique",
-        "Révocation des liens de partage depuis les paramètres",
         "Mode économie batterie pour réduire les animations",
         "Page Mes statistiques pour chaque utilisateur",
         "Page statistiques détaillées réservée au staff",
@@ -270,6 +263,27 @@ APP_RELEASES.append({
         "Historique des générations déplacé dans les paramètres",
         "Mes statistiques regroupées dans les paramètres",
         "Boutons plus réactifs sur ordinateur et mobile",
+    ],
+})
+APP_RELEASES.append({
+    "version": "2026.08.22.9",
+    "title": "Stabilité de l'interface",
+    "date": "2026-08-22T19:39:00+02:00",
+    "additions": [
+        "Correction des superpositions entre tiroirs, modales, toasts et zone de saisie",
+        "Meilleure gestion des safe areas et du clavier sur iPhone",
+        "Écran de chargement verrouillé sur une forme réellement circulaire",
+        "Responsive renforcé sur les paramètres, statistiques et panneau staff",
+    ],
+})
+APP_RELEASES.append({
+    "version": "2026.08.22.10",
+    "title": "Automatisation nocturne",
+    "date": "2026-08-22T20:41:00+02:00",
+    "additions": [
+        "Deux générations automatiques quotidiennes : 01:00 et 02:30",
+        "Deuxième planche nocturne avec son propre dossier et son propre thème",
+        "Suppression complète du partage public de conversations",
     ],
 })
 APP_RELEASE = APP_RELEASES[-1]
@@ -988,141 +1002,6 @@ def update_bug_report_status(report_id, status):
 
 
 
-def create_conversation_share(username, conversation, hours=24):
-    token = secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
-    expires_at = (now + timedelta(hours=hours)).isoformat()
-    record = {
-        "token": token,
-        "username": username,
-        "conversation_id": str(conversation.get("id") or "")[:100],
-        "title": str(conversation.get("title") or "Conversation")[:120],
-        "snapshot": conversation,
-        "created_at": now.isoformat(),
-        "expires_at": expires_at,
-    }
-    if supabase_accounts_enabled():
-        try:
-            supabase_request(
-                "POST",
-                SUPABASE_SHARES_TABLE,
-                record,
-                {"Prefer": "return=minimal"},
-            )
-            return record
-        except RuntimeError:
-            pass
-    shares = load_local_json(SHARE_LINKS_FILE, {})
-    if not isinstance(shares, dict):
-        shares = {}
-    shares[token] = record
-    atomic_write_json(SHARE_LINKS_FILE, shares)
-    return record
-
-
-def get_conversation_share(token):
-    if not re.fullmatch(r"[A-Za-z0-9_-]{30,80}", str(token or "")):
-        return None
-    record = None
-    if supabase_accounts_enabled():
-        try:
-            rows = supabase_request(
-                "GET",
-                f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&select=token,username,conversation_id,title,snapshot,created_at,expires_at&limit=1",
-            ) or []
-            if rows:
-                record = rows[0]
-        except RuntimeError:
-            pass
-    if record is None:
-        shares = load_local_json(SHARE_LINKS_FILE, {})
-        if isinstance(shares, dict):
-            record = shares.get(token)
-    if not isinstance(record, dict):
-        return None
-    try:
-        expires = datetime.fromisoformat(str(record.get("expires_at") or ""))
-        if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
-        if expires <= datetime.now(timezone.utc):
-            return None
-    except (TypeError, ValueError):
-        return None
-    return record
-
-
-
-def list_conversation_shares(username, include_expired=False):
-    records = []
-    if supabase_accounts_enabled():
-        try:
-            rows = supabase_request(
-                "GET",
-                f"{SUPABASE_SHARES_TABLE}?username=eq.{quote(username, safe='')}&select=token,conversation_id,title,created_at,expires_at&order=created_at.desc",
-            ) or []
-            records = [row for row in rows if isinstance(row, dict)]
-        except RuntimeError:
-            pass
-
-    if not records:
-        shares = load_local_json(SHARE_LINKS_FILE, {})
-        if isinstance(shares, dict):
-            records = [
-                item for item in shares.values()
-                if isinstance(item, dict) and str(item.get("username", "")).casefold() == username.casefold()
-            ]
-            records.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
-
-    now = datetime.now(timezone.utc)
-    output = []
-    for record in records:
-        expired = False
-        try:
-            expires = datetime.fromisoformat(str(record.get("expires_at") or ""))
-            if expires.tzinfo is None:
-                expires = expires.replace(tzinfo=timezone.utc)
-            expired = expires <= now
-        except (TypeError, ValueError):
-            expired = True
-        if expired and not include_expired:
-            continue
-        clean = dict(record)
-        clean["expired"] = expired
-        output.append(clean)
-    return output
-
-
-def revoke_conversation_share(username, token):
-    if not re.fullmatch(r"[A-Za-z0-9_-]{30,80}", str(token or "")):
-        return False
-
-    removed = False
-    if supabase_accounts_enabled():
-        try:
-            rows = supabase_request(
-                "GET",
-                f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&username=eq.{quote(username, safe='')}&select=token&limit=1",
-            ) or []
-            if rows:
-                supabase_request(
-                    "DELETE",
-                    f"{SUPABASE_SHARES_TABLE}?token=eq.{quote(token, safe='')}&username=eq.{quote(username, safe='')}",
-                    extra_headers={"Prefer": "return=minimal"},
-                )
-                removed = True
-        except RuntimeError:
-            pass
-
-    shares = load_local_json(SHARE_LINKS_FILE, {})
-    if isinstance(shares, dict):
-        record = shares.get(token)
-        if isinstance(record, dict) and str(record.get("username", "")).casefold() == username.casefold():
-            shares.pop(token, None)
-            atomic_write_json(SHARE_LINKS_FILE, shares)
-            removed = True
-    return removed
-
-
 def user_statistics(username):
     conversations = load_json(CONVERSATIONS_FILE, {})
     owner = next((key for key in conversations if key.casefold() == username.casefold()), username)
@@ -1164,7 +1043,6 @@ def user_statistics(username):
         stats["first_message_at"] = dates[0]
         stats["last_message_at"] = dates[-1]
     stats["total_generations"] = stats["images"] + stats["cricut_images"]
-    stats["active_shares"] = len(list_conversation_shares(username))
     return stats
 
 
@@ -1393,7 +1271,7 @@ def save_automatic_generation(username, generation):
         existing.update(generation)
 
     # Une année complète est largement suffisante et garde le disque léger.
-    all_generations[owner_key] = items[-366:]
+    all_generations[owner_key] = items[-740:]
     save_json(AUTOMATIC_GENERATIONS_FILE, all_generations)
 
 
@@ -2015,13 +1893,16 @@ def start_automatic_cricut_from_image(username, image_url, metadata):
     try:
         source_data = download_automatic_source_image(image_url)
         automatic_date = str(metadata.get("automatic_date", ""))
+        automation_slot = str(metadata.get("automation_slot", "0100"))
         source_image = {
-            "filename": f"planche-scrapbooking-{automatic_date or 'du-jour'}.png",
+            "filename": f"planche-scrapbooking-{automatic_date or 'du-jour'}-{automation_slot}.png",
             "data": source_data,
         }
         cricut_metadata = {
             "automation": "daily-cricut",
             "automatic_date": automatic_date,
+            "automation_slot": automation_slot,
+            "automation_time": str(metadata.get("automation_time", "")),
             "theme_id": str(metadata.get("theme_id", "")),
             "theme_label": str(metadata.get("theme_label", "")),
             "source_image_url": str(image_url),
@@ -2029,6 +1910,8 @@ def start_automatic_cricut_from_image(username, image_url, metadata):
         automatic_conversation_id = (
             "cricut-auto-"
             + hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:12]
+            + "-"
+            + automation_slot
         )
         discord_bridge.start_cricut_job(
             username,
@@ -2049,6 +1932,8 @@ def start_automatic_cricut_from_image(username, image_url, metadata):
 def save_daily_automatic_generation(username, event):
     metadata = event.get("_job_metadata", {})
     automatic_date = str(metadata.get("automatic_date", ""))
+    automation_slot = str(metadata.get("automation_slot", "0100"))
+    automation_time = str(metadata.get("automation_time", ""))
     images = [
         str(url)[:2000]
         for url in event.get("images", [])
@@ -2057,9 +1942,11 @@ def save_daily_automatic_generation(username, event):
     if not automatic_date or not images:
         return
     save_automatic_generation(username, {
-        "id": f"auto-{automatic_date}",
+        "id": f"auto-{automatic_date}-{automation_slot}",
         "date": automatic_date,
-        "title": f"Planche automatique · {metadata.get('theme_label', 'Scrapbooking')}",
+        "slot": automation_slot,
+        "time": automation_time,
+        "title": f"Planche automatique {automation_time or automation_slot} · {metadata.get('theme_label', 'Scrapbooking')}",
         "theme_id": str(metadata.get("theme_id", "")),
         "theme_label": str(metadata.get("theme_label", "")),
         "source_image_url": str(metadata.get("source_image_url", ""))[:2000],
@@ -2184,22 +2071,61 @@ def run_midnight_cleanup(date_key):
     save_automation_state(state)
 
 
-def start_daily_automatic_generations(date_value):
-    """Lance une planche puis sa découpe Cricut pour chaque compte éligible."""
+AUTOMATION_SLOTS = (
+    ("0100", 1, 0, "01:00"),
+    ("0230", 2, 30, "02:30"),
+)
+AUTOMATION_SCHEDULER_VERSION = 2
+
+
+def _automation_slot_due(now, hour, minute):
+    return (now.hour, now.minute) >= (hour, minute)
+
+
+def _ensure_automation_slot_state(day_state, slot_key):
+    slots = day_state.setdefault("slots", {})
+    if not isinstance(slots, dict):
+        slots = {}
+        day_state["slots"] = slots
+    slot_state = slots.setdefault(slot_key, {})
+    if not isinstance(slot_state, dict):
+        slot_state = {}
+        slots[slot_key] = slot_state
+    return slot_state
+
+
+def start_daily_automatic_generations(date_value, slot_key="0100"):
+    """Lance une planche puis sa découpe Cricut pour un créneau nocturne."""
+    slot = next((item for item in AUTOMATION_SLOTS if item[0] == slot_key), None)
+    if slot is None:
+        return
+    _, _, _, slot_label = slot
+
     date_key = date_value.isoformat()
     state = load_automation_state()
     day_state = state.setdefault("days", {}).setdefault(date_key, {})
-    if day_state.get("automation_skipped_on_first_start"):
+    slot_state = _ensure_automation_slot_state(day_state, slot_key)
+    if slot_state.get("automation_skipped_on_first_start") or slot_state.get("skipped_on_upgrade"):
         return
+
+    # Compatibilité avec l'ancien format : la génération historique de 01:00
+    # ne doit pas être relancée le jour d'une mise à niveau du scheduler.
+    if slot_key == "0100" and day_state.get("started_users") and not slot_state.get("started_users"):
+        slot_state["started_users"] = list(day_state.get("started_users", []))
+        slot_state["theme_id"] = str(day_state.get("theme_id", ""))
+        slot_state["theme_label"] = str(day_state.get("theme_label", ""))
+        if day_state.get("started_at"):
+            slot_state["started_at"] = day_state.get("started_at")
+
     previous_theme_id = str(state.get("last_theme_id", ""))
-    theme_id = str(day_state.get("theme_id", ""))
-    theme_label = str(day_state.get("theme_label", ""))
+    theme_id = str(slot_state.get("theme_id", ""))
+    theme_label = str(slot_state.get("theme_label", ""))
     if not theme_id or not theme_label:
         theme_id, theme_label = daily_theme_for(date_value, previous_theme_id)
-        day_state["theme_id"] = theme_id
-        day_state["theme_label"] = theme_label
+        slot_state["theme_id"] = theme_id
+        slot_state["theme_label"] = theme_label
 
-    started_users = set(day_state.get("started_users", []))
+    started_users = set(slot_state.get("started_users", []))
     users = load_json(USERS_FILE, {})
     if not isinstance(users, dict):
         return
@@ -2211,10 +2137,12 @@ def start_daily_automatic_generations(date_value):
             continue
 
         safe_user = hashlib.sha256(username.casefold().encode("utf-8")).hexdigest()[:12]
-        conversation_id = f"auto-{date_value.strftime('%Y%m%d')}-{safe_user}"
+        conversation_id = f"auto-{date_value.strftime('%Y%m%d')}-{slot_key}-{safe_user}"
         metadata = {
             "automation": "daily-sheet",
             "automatic_date": date_key,
+            "automation_slot": slot_key,
+            "automation_time": slot_label,
             "theme_id": theme_id,
             "theme_label": theme_label,
         }
@@ -2223,7 +2151,7 @@ def start_daily_automatic_generations(date_value):
                 username,
                 conversation_id,
                 "user",
-                f"Planche automatique du {date_value.strftime('%d/%m/%Y')} · {theme_label}",
+                f"Planche automatique du {date_value.strftime('%d/%m/%Y')} à {slot_label} · {theme_label}",
             )
             discord_bridge.start_turn(
                 username,
@@ -2233,44 +2161,78 @@ def start_daily_automatic_generations(date_value):
                 metadata=metadata,
             )
         except Exception:
-            app.logger.exception("Impossible de lancer la génération automatique pour %s", username)
+            app.logger.exception(
+                "Impossible de lancer la génération automatique %s pour %s",
+                slot_label,
+                username,
+            )
             continue
 
         started_users.add(username.casefold())
-        day_state["started_users"] = sorted(started_users)
-        day_state["started_at"] = utc_now()
+        slot_state["started_users"] = sorted(started_users)
+        slot_state["started_at"] = utc_now()
         state["last_theme_id"] = theme_id
         save_automation_state(state)
 
 
 def automation_loop():
-    """Rattrape un redémarrage puis déclenche minuit et 01:00, heure de Paris."""
+    """Déclenche le nettoyage puis les générations de 01:00 et 02:30 (Paris)."""
     while True:
         try:
             now = datetime.now(AUTOMATION_TIMEZONE)
             date_value = now.date()
             date_key = date_value.isoformat()
             state = load_automation_state()
+            days = state.setdefault("days", {})
+            day_state = days.setdefault(date_key, {})
+
             if not state.get("scheduler_initialized"):
-                # Au premier déploiement, on attend le prochain minuit plutôt
-                # que d'effacer l'historique en plein milieu de journée.
+                # Premier démarrage : ne jamais rattraper une heure déjà passée.
                 state["scheduler_initialized"] = True
-                state.setdefault("days", {}).setdefault(date_key, {})["cleanup_completed"] = True
-                state["days"][date_key]["cleanup_at"] = utc_now()
-                if now.hour >= 1:
-                    state["days"][date_key]["automation_skipped_on_first_start"] = True
+                day_state["cleanup_completed"] = True
+                day_state["cleanup_at"] = utc_now()
+                for slot_key, hour, minute, _ in AUTOMATION_SLOTS:
+                    if _automation_slot_due(now, hour, minute):
+                        _ensure_automation_slot_state(day_state, slot_key)["automation_skipped_on_first_start"] = True
+                state["scheduler_version"] = AUTOMATION_SCHEDULER_VERSION
                 save_automation_state(state)
-            day_state = state.get("days", {}).get(date_key, {}) if isinstance(state.get("days"), dict) else {}
+
+            elif int(state.get("scheduler_version", 1) or 1) < AUTOMATION_SCHEDULER_VERSION:
+                # Mise à niveau depuis la version qui ne connaissait que 01:00.
+                # On conserve le passage de 01:00 déjà enregistré et on ne
+                # déclenche pas rétroactivement 02:30 si cette heure est passée.
+                slot_0100 = _ensure_automation_slot_state(day_state, "0100")
+                if day_state.get("started_users") and not slot_0100.get("started_users"):
+                    slot_0100["started_users"] = list(day_state.get("started_users", []))
+                    slot_0100["theme_id"] = str(day_state.get("theme_id", ""))
+                    slot_0100["theme_label"] = str(day_state.get("theme_label", ""))
+                    if day_state.get("started_at"):
+                        slot_0100["started_at"] = day_state.get("started_at")
+                elif _automation_slot_due(now, 1, 0):
+                    slot_0100["skipped_on_upgrade"] = True
+
+                for slot_key, hour, minute, _ in AUTOMATION_SLOTS:
+                    slot_state = _ensure_automation_slot_state(day_state, slot_key)
+                    if slot_key != "0100" and _automation_slot_due(now, hour, minute):
+                        slot_state["skipped_on_upgrade"] = True
+
+                state["scheduler_version"] = AUTOMATION_SCHEDULER_VERSION
+                save_automation_state(state)
+
+            # Recharge après les éventuelles migrations ci-dessus.
+            state = load_automation_state()
+            day_state = state.setdefault("days", {}).setdefault(date_key, {})
 
             if not day_state.get("cleanup_completed"):
                 run_midnight_cleanup(date_key)
-            if now.hour >= 1:
-                start_daily_automatic_generations(date_value)
+
+            for slot_key, hour, minute, _ in AUTOMATION_SLOTS:
+                if _automation_slot_due(now, hour, minute):
+                    start_daily_automatic_generations(date_value, slot_key)
         except Exception:
             app.logger.exception("Erreur dans l'automatisation quotidienne")
 
-        # Une vérification toutes les 30 secondes permet de rattraper un
-        # redémarrage sans dériver de l'heure de Paris.
+        # Vérification fréquente pour rester précis même après un redémarrage.
         time.sleep(30)
 
 
@@ -3838,7 +3800,6 @@ def settings():
         account=users[user_key],
         settings_csrf_token=get_settings_csrf_token(),
         theme_options=THEME_OPTIONS,
-        active_shares=list_conversation_shares(user_key),
         user_theme=users[user_key].get("theme") or "nathgpt",
         theme_color=THEME_OPTIONS.get(users[user_key].get("theme") or "nathgpt", THEME_OPTIONS["nathgpt"])["color"],
         battery_saver=bool(users[user_key].get("battery_saver")),
@@ -3871,20 +3832,6 @@ def update_preferences():
     flash("Préférences enregistrées.", "success")
     return redirect(url_for("settings"))
 
-
-@app.route("/settings/shares/<token>/revoke", methods=["POST"])
-def revoke_share(token):
-    username = session.get("username")
-    if not username:
-        return redirect(url_for("login"))
-    csrf_token = request.form.get("csrf_token", "")
-    if not secrets.compare_digest(csrf_token, session.get("settings_csrf_token", "")):
-        return "Requête invalide.", 400
-    if revoke_conversation_share(username, token):
-        flash("Lien de partage révoqué. Il n'est plus accessible.", "success")
-    else:
-        flash("Ce lien est déjà expiré ou introuvable.", "error")
-    return redirect(url_for("settings"))
 
 
 @app.route("/settings/generations")
@@ -4607,42 +4554,6 @@ def pin_conversation(conversation_id):
         conversation.pop("pinned_at", None)
     save_json(CONVERSATIONS_FILE, conversations)
     return jsonify({"ok": True, "pinned": pinned})
-
-
-@app.route("/api/conversations/<conversation_id>/share", methods=["POST"])
-def share_conversation(conversation_id):
-    username = session.get("username")
-    if not username:
-        return jsonify({"error": "Connexion requise."}), 401
-    conversation = get_conversation(username, conversation_id)
-    if not conversation:
-        return jsonify({"error": "Discussion introuvable."}), 404
-    payload = request.get_json(silent=True) or {}
-    try:
-        hours = int(payload.get("hours", 24))
-    except (TypeError, ValueError):
-        hours = 24
-    if hours not in {1, 24, 168}:
-        hours = 24
-    record = create_conversation_share(username, conversation, hours=hours)
-    return jsonify({
-        "ok": True,
-        "url": url_for("public_shared_conversation", token=record["token"], _external=True),
-        "expires_at": record["expires_at"],
-    })
-
-
-@app.route("/share/<token>")
-def public_shared_conversation(token):
-    record = get_conversation_share(token)
-    if not record:
-        return render_template("share.html", expired=True, conversation=None, share=None), 404
-    return render_template(
-        "share.html",
-        expired=False,
-        conversation=record.get("snapshot") or {},
-        share=record,
-    )
 
 
 @app.route("/api/conversations")

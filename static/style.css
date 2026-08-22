@@ -5177,22 +5177,6 @@ textarea::placeholder {
     cursor: pointer;
 }
 .settings-primary-link { width: fit-content; }
-.settings-share-list { display: grid; gap: 8px; }
-.settings-share-list article {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 14px;
-    padding: 12px 13px;
-    border: 1px solid rgba(255,255,255,.08);
-    border-radius: 12px;
-    background: rgba(255,255,255,.03);
-}
-.settings-share-list article > div { display: grid; gap: 4px; min-width: 0; }
-.settings-share-list strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.settings-share-list small { color: #8f93a0; font-size: 10px; overflow-wrap: anywhere; }
-.settings-share-list form { margin: 0; }
-.settings-share-list button { padding: 8px 10px; border: 1px solid rgba(255,138,138,.25); border-radius: 9px; color: #ffdada; background: rgba(137,54,60,.28); font: inherit; font-size: 11px; font-weight: 750; cursor: pointer; }
 .settings-empty-state { padding: 15px; border: 1px dashed rgba(255,255,255,.10); border-radius: 12px; color: #8f93a0; font-size: 12px; text-align: center; }
 
 .personal-stats-grid,
@@ -5269,13 +5253,11 @@ textarea::placeholder {
 .settings-page.theme-light .settings-card,
 .settings-page.theme-light .personal-stats-grid article { border-color:rgba(29,29,31,.09); background:rgba(255,255,255,.82); box-shadow:0 18px 45px rgba(0,0,0,.07); }
 .settings-page.theme-light .settings-card > p:not(.settings-eyebrow),
-.settings-page.theme-light .settings-toggle small,
-.settings-page.theme-light .settings-share-list small { color:#6e6e73; }
+.settings-page.theme-light .settings-toggle small { color:#6e6e73; }
 .settings-page.theme-light .settings-details dd,
 .settings-page.theme-light .settings-preferences-form > label:not(.settings-toggle) { color:#29292d; }
 .settings-page.theme-light .settings-preferences-form select { color:#1d1d1f; background:#fff; border-color:#d5d5d9; }
-.settings-page.theme-light .settings-toggle,
-.settings-page.theme-light .settings-share-list article { border-color:rgba(29,29,31,.09); background:rgba(29,29,31,.025); }
+.settings-page.theme-light .settings-toggle { border-color:rgba(29,29,31,.09); background:rgba(29,29,31,.025); }
 .settings-page.theme-light .staff-return { color:#343438; border-color:rgba(29,29,31,.12); }
 
 /* Le mode économie batterie garde l'interface vivante mais supprime les effets continus coûteux. */
@@ -5311,8 +5293,6 @@ textarea::placeholder {
     .personal-stats-grid article,
     .staff-analytics-grid article { min-height: 0; padding: 16px; }
     .staff-header-actions { align-items: stretch; flex-direction: column; }
-    .settings-share-list article { align-items: stretch; flex-direction: column; }
-    .settings-share-list button { width: 100%; }
 }
 
 
@@ -5668,7 +5648,6 @@ a.settings-primary-link,
 .mobile-history-toggle,
 .settings-notification-button,
 .settings-delete-button,
-.settings-share-list button,
 .staff-actions button,
 .staff-feature-form button,
 .staff-ticket-actions button {
@@ -5688,7 +5667,6 @@ a.settings-primary-link:active,
 .mobile-history-toggle:active,
 .settings-notification-button:active,
 .settings-delete-button:active,
-.settings-share-list button:active,
 .staff-actions button:active,
 .staff-feature-form button:active,
 .staff-ticket-actions button:active,
@@ -5712,4 +5690,213 @@ a.settings-primary-link:active,
     .generation-history-settings-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; }
     .generation-history-settings-card { padding:15px; }
     .generation-history-settings-heading { align-items:flex-start; flex-direction:column; gap:8px; }
+}
+
+
+/* =========================================================
+   V9 · STABILISATION UI / ANTI-SUPERPOSITION
+   ========================================================= */
+
+:root {
+    --ui-z-content: 1;
+    --ui-z-topbar: 30;
+    --ui-z-composer: 40;
+    --ui-z-staff-banner: 700;
+    --ui-z-drawer: 900;
+    --ui-z-modal: 1200;
+    --ui-z-changelog: 1400;
+    --ui-z-launch: 1600;
+    --ui-z-toast: 1900;
+}
+
+html { overflow-x: hidden; }
+body { max-width: 100vw; overflow-x: hidden; }
+body.ui-overlay-open { overflow: hidden !important; overscroll-behavior: none; }
+
+.chat-page,
+.chat-page .app,
+.chat-page .main { width: 100%; max-width: 100vw; }
+.chat-page .app { min-width: 0; overflow: hidden; }
+.chat-page .main { min-height: 0; overflow: hidden; isolation: isolate; }
+.chat-page .conversation { position: relative; z-index: var(--ui-z-content); min-height: 0; min-width: 0; scroll-padding-bottom: 175px; }
+.chat-page .topbar { position: relative; z-index: var(--ui-z-topbar); flex: 0 0 auto; }
+.chat-page .input-area { z-index: var(--ui-z-composer); pointer-events: none; }
+.chat-page .input-wrapper { pointer-events: auto; }
+.chat-page .input-box { position: relative; isolation: isolate; }
+.chat-page .reference-preview { max-height: min(25vh, 180px); overflow: auto; overscroll-behavior: contain; }
+.chat-page .message-container,
+.chat-page .assistant-message,
+.chat-page .user-message { min-width: 0; }
+.chat-page .assistant-bubble,
+.chat-page .user-bubble,
+.chat-page .my-bug-ticket,
+.chat-page .chat-error-card,
+.chat-page .service-outage-card { overflow-wrap: anywhere; word-break: break-word; }
+
+/* Le tiroir mobile ne peut jamais passer au-dessus d'une vraie modale. */
+.mobile-history-overlay { z-index: var(--ui-z-drawer) !important; }
+.mobile-history-sheet { min-height: 0; overflow: hidden; isolation: isolate; }
+.mobile-history-list { flex: 1 1 auto; min-height: 0; overscroll-behavior: contain; }
+.mobile-history-backdrop { z-index: 0; }
+.mobile-history-sheet { z-index: 1; }
+
+/* Une modale fermée ne doit jamais intercepter un clic invisible. */
+.utility-modal {
+    z-index: var(--ui-z-modal) !important;
+    pointer-events: none;
+    overflow: hidden;
+    padding:
+        max(16px, env(safe-area-inset-top))
+        max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom))
+        max(16px, env(safe-area-inset-left));
+}
+.utility-modal.is-open { pointer-events: auto; }
+.utility-modal-backdrop { z-index: 0; width: 100%; height: 100%; }
+.utility-modal-card {
+    z-index: 1;
+    min-width: 0;
+    max-width: calc(100vw - 32px);
+    max-height: min(82dvh, 760px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+}
+.utility-modal-card.wide { max-width: min(920px, calc(100vw - 32px)); }
+.utility-modal-head { position: sticky; z-index: 2; top: -22px; padding-top: 22px; padding-bottom: 5px; background: linear-gradient(#fff 76%, rgba(255,255,255,0)); }
+.utility-modal-head > div { min-width: 0; }
+.utility-modal-head h2 { overflow-wrap: anywhere; }
+.utility-modal-head > button { flex: 0 0 auto; }
+
+.app-update-dialog { z-index: var(--ui-z-changelog) !important; overflow: auto; overscroll-behavior: contain; }
+.app-update-card.cumulative { max-width: min(520px, calc(100vw - 32px)); max-height: min(84dvh, 720px); overscroll-behavior: contain; }
+.launch-screen { z-index: var(--ui-z-launch) !important; }
+.staff-impersonation-banner { z-index: var(--ui-z-staff-banner) !important; }
+.toast-stack { z-index: var(--ui-z-toast) !important; max-height: 50dvh; overflow: hidden; }
+.chat-page .toast-stack { bottom: max(142px, calc(116px + env(safe-area-inset-bottom))); }
+
+/* Le cercle de chargement reste réellement circulaire, y compris Safari. */
+.launch-logo-stage {
+    aspect-ratio: 1 !important;
+    border-radius: 50% !important;
+    clip-path: circle(50% at 50% 50%);
+    -webkit-clip-path: circle(50% at 50% 50%);
+    overflow: hidden !important;
+    isolation: isolate;
+}
+.launch-logo-shell { flex: 0 0 auto; }
+
+/* Le bandeau staff ne recouvre plus la barre mobile. */
+.chat-page.staff-impersonating .main { padding-top: 58px; }
+.chat-page.staff-impersonating .staff-impersonation-banner { max-height: calc(100dvh - 20px); overflow: auto; }
+
+/* Pages paramètres/staff : aucun contenu long ne doit sortir de la carte. */
+.settings-shell,
+.staff-shell,
+.generation-history-settings-shell,
+.staff-stats-shell { max-width: 100%; }
+.settings-card,
+.staff-table-card,
+.staff-analytics-card,
+.staff-feature-card { min-width: 0; }
+.settings-header,
+.staff-header { min-width: 0; }
+.settings-brand,
+.staff-brand { min-width: 0; }
+.settings-brand > div,
+.staff-brand > div { min-width: 0; }
+.settings-brand h1,
+.staff-brand h1 { overflow-wrap: anywhere; }
+.staff-table-scroll { max-width: 100%; overscroll-behavior-x: contain; }
+.staff-analytics-grid { align-items: stretch; }
+.staff-analytics-grid article { min-width: 0; }
+
+/* Les cartes de génération ne peuvent plus élargir la grille avec une URL/phrase longue. */
+.generation-history-settings-grid { min-width: 0; }
+.settings-generation-card,
+.settings-generation-card a,
+.settings-generation-copy { min-width: 0; }
+.settings-generation-preview img { display: block; }
+
+/* Feedback tactile sans conserver un transform après un pointercancel. */
+.is-pressing { will-change: transform; }
+button:disabled { transform: none !important; }
+
+@media (max-width: 760px) {
+    .chat-page .topbar {
+        position: relative;
+        z-index: var(--ui-z-topbar);
+        flex: 0 0 auto;
+    }
+    .chat-page .conversation {
+        scroll-padding-bottom: calc(165px + env(safe-area-inset-bottom));
+        padding-bottom: calc(155px + env(safe-area-inset-bottom));
+    }
+    .chat-page .input-area {
+        padding-bottom: max(10px, env(safe-area-inset-bottom));
+    }
+    .chat-page .input-wrapper { width: 100%; max-width: 100vw; }
+    .chat-page .input-box textarea { min-width: 0; }
+    .chat-page .footer-text { padding-inline: 4px; gap: 5px 8px; }
+    .chat-page .footer-actions { max-width: 100%; flex-wrap: wrap; justify-content: center; }
+    .chat-page .toast-stack {
+        right: 10px;
+        left: 10px;
+        bottom: calc(150px + env(safe-area-inset-bottom));
+    }
+    .ui-toast { width: 100%; max-width: none; }
+
+    .mobile-history-overlay { height: 100dvh; }
+    .mobile-history-sheet {
+        width: min(88vw, 350px);
+        max-width: calc(100vw - 28px);
+        height: 100dvh;
+        padding-right: max(12px, env(safe-area-inset-right));
+    }
+
+    .utility-modal {
+        align-items: end;
+        padding:
+            max(8px, env(safe-area-inset-top))
+            max(8px, env(safe-area-inset-right))
+            max(8px, env(safe-area-inset-bottom))
+            max(8px, env(safe-area-inset-left));
+    }
+    .utility-modal-card,
+    .utility-modal-card.wide {
+        width: 100%;
+        max-width: 100%;
+        max-height: min(88dvh, 760px);
+        border-radius: 24px 24px 18px 18px;
+    }
+    .utility-modal-head { top: -18px; padding-top: 18px; }
+
+    .app-update-dialog { padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+    .app-update-card.cumulative { width: 100%; max-width: 100%; max-height: 88dvh; }
+
+    .chat-page.staff-impersonating .main { padding-top: 96px; }
+
+    .settings-header,
+    .staff-header {
+        align-items: flex-start;
+        flex-wrap: wrap;
+    }
+    .settings-header .staff-return,
+    .staff-header .staff-return { flex: 0 0 auto; }
+    .settings-brand,
+    .staff-brand { flex: 1 1 210px; }
+
+    .staff-table-title { flex-wrap: wrap; }
+    .staff-privacy { max-width: 100% !important; text-align: left !important; }
+}
+
+@media (max-width: 390px) {
+    .mobile-brand span { max-width: 112px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mobile-actions { gap: 5px; }
+    .mobile-new-chat,
+    .mobile-history-toggle { width: 32px; height: 32px; }
+    .settings-shell,
+    .staff-shell,
+    .generation-history-settings-shell { width: calc(100% - 18px) !important; }
+    .generation-history-settings-grid { grid-template-columns: 1fr !important; }
+    .launch-logo-stage { width: 136px !important; height: 136px !important; }
 }

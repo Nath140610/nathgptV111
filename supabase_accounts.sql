@@ -62,20 +62,6 @@ alter table public.nathgpt_bug_reports enable row level security;
 revoke all on table public.nathgpt_bug_reports from anon, authenticated;
 grant select, insert, update, delete on table public.nathgpt_bug_reports to service_role;
 
--- Liens publics temporaires. Le snapshot évite d'exposer de futurs messages ajoutés à la discussion.
-create table if not exists public.nathgpt_conversation_shares (
-    token text primary key,
-    username text not null,
-    conversation_id text not null,
-    title text not null default 'Conversation',
-    snapshot jsonb not null,
-    created_at timestamptz not null default now(),
-    expires_at timestamptz not null
-);
-create index if not exists nathgpt_conversation_shares_expires_at_idx on public.nathgpt_conversation_shares(expires_at);
-alter table public.nathgpt_conversation_shares enable row level security;
-revoke all on table public.nathgpt_conversation_shares from anon, authenticated;
-grant select, insert, update, delete on table public.nathgpt_conversation_shares to service_role;
 
 
 -- Etat persistant de l'application : maintenance manuelle et programmée.

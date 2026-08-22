@@ -27,7 +27,7 @@
     <script defer src="{{ url_for('static', filename='pwa-gate.js', v=asset_version) }}"></script>
 </head>
 
-<body class="chat-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}" data-account-key="{{ username }}" data-battery-saver="{{ '1' if battery_saver else '0' }}">
+<body class="chat-page theme-{{ user_theme }}{% if battery_saver %} battery-saver{% endif %}{% if staff_impersonating %} staff-impersonating{% endif %}" data-account-key="{{ username }}" data-battery-saver="{{ '1' if battery_saver else '0' }}">
 
 <div class="launch-screen" id="launchScreen" role="status" aria-label="Ouverture de NathGPT">
     <div class="launch-aurora launch-aurora-one"></div>
@@ -170,7 +170,9 @@
             <div class="mobile-actions">
                 <button
                     class="mobile-history-toggle"
+                    id="mobileHistoryToggle"
                     type="button"
+                    aria-expanded="false"
                     onclick="toggleMobileHistory()"
                     aria-label="Ouvrir les discussions"
                     aria-controls="mobileHistoryOverlay"
@@ -297,7 +299,6 @@
                     <span>NathGPT peut faire des erreurs.</span>
                     <span class="footer-actions">
                         <button type="button" onclick="openBugReport()">Signaler un bug</button>
-                        <button type="button" onclick="shareCurrentConversation()">Partager la conversation</button>
                     </span>
                 </div>
 
@@ -353,18 +354,6 @@
         <div id="bugTicketMinePane" class="bug-ticket-pane">
             <div id="myBugTickets" class="my-bug-ticket-list"><div class="generation-history-empty">Chargement…</div></div>
         </div>
-    </section>
-</div>
-
-<div class="utility-modal generation-history-modal" id="generationHistoryModal" aria-hidden="true">
-    <button class="utility-modal-backdrop" type="button" onclick="closeGenerationHistory()"></button>
-    <section class="utility-modal-card wide" role="dialog" aria-modal="true" aria-labelledby="generationHistoryTitle">
-        <div class="utility-modal-head"><div><small>Bibliothèque</small><h2 id="generationHistoryTitle">Historique des générations</h2></div><button type="button" onclick="closeGenerationHistory()">×</button></div>
-        <div class="generation-history-tools">
-            <input id="generationHistorySearch" type="search" placeholder="Rechercher un prompt ou une discussion…" oninput="renderGenerationHistory()">
-            <select id="generationHistoryFilter" onchange="renderGenerationHistory()"><option value="all">Tout</option><option value="image">Images</option><option value="cricut">Cricut</option></select>
-        </div>
-        <div class="generation-history-grid" id="generationHistoryGrid"><div class="generation-history-empty">Chargement…</div></div>
     </section>
 </div>
 
@@ -1859,8 +1848,8 @@ function clearReferenceImages() {
 /* ========================================================= */
 
 function toggleMobileHistory() {
-
     const overlay = document.getElementById("mobileHistoryOverlay");
+    if (!overlay) return;
     const isOpen = overlay.classList.contains("is-open");
 
     if (isOpen) {
@@ -1868,19 +1857,24 @@ function toggleMobileHistory() {
         return;
     }
 
+    closeAllUtilityModals();
     overlay.classList.add("is-open");
     overlay.setAttribute("aria-hidden", "false");
+    document.getElementById("mobileHistoryToggle")?.setAttribute("aria-expanded", "true");
     document.body.classList.add("mobile-history-open");
+    syncOverlayScrollLock();
     loadConversations();
 }
 
 
 function closeMobileHistory() {
-
     const overlay = document.getElementById("mobileHistoryOverlay");
+    if (!overlay) return;
     overlay.classList.remove("is-open");
     overlay.setAttribute("aria-hidden", "true");
+    document.getElementById("mobileHistoryToggle")?.setAttribute("aria-expanded", "false");
     document.body.classList.remove("mobile-history-open");
+    syncOverlayScrollLock();
 }
 
 
@@ -5980,7 +5974,6 @@ const launchStartedAt = performance.now();
 let launchProgressFrame = null;
 let launchFinishRequested = false;
 
-let generationHistoryItems = [];
 
 function haptic(kind = "tap") {
     if (!navigator.vibrate) return false;
@@ -6045,18 +6038,49 @@ function switchBugTicketTab(tab) {
     if (isMine) loadMyBugTickets();
 }
 
+function syncOverlayScrollLock() {
+    const utilityOpen = Boolean(document.querySelector(".utility-modal.is-open"));
+    const mobileOpen = Boolean(document.getElementById("mobileHistoryOverlay")?.classList.contains("is-open"));
+    const changelogOpen = Boolean(document.querySelector(".app-update-dialog.is-visible:not(.is-closing)"));
+    document.body.classList.toggle("ui-overlay-open", utilityOpen || mobileOpen || changelogOpen);
+}
+
+function closeAllUtilityModals(exceptId = "") {
+    document.querySelectorAll(".utility-modal.is-open").forEach((modal) => {
+        if (exceptId && modal.id === exceptId) return;
+        modal.classList.remove("is-open");
+        modal.setAttribute("aria-hidden", "true");
+    });
+    syncOverlayScrollLock();
+}
+
+function openUtilityModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return null;
+    closeMobileHistory();
+    closeAllUtilityModals(id);
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden", "false");
+    syncOverlayScrollLock();
+    return modal;
+}
+
+function closeUtilityModal(id) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden", "true");
+    syncOverlayScrollLock();
+}
+
 function openBugReport() {
     haptic("tap");
-    const modal = document.getElementById("bugReportModal");
-    modal?.classList.add("is-open");
-    modal?.setAttribute("aria-hidden", "false");
+    openUtilityModal("bugReportModal");
     switchBugTicketTab("new");
     setTimeout(() => document.getElementById("bugDescription")?.focus(), 120);
 }
 function closeBugReport() {
-    const modal = document.getElementById("bugReportModal");
-    modal?.classList.remove("is-open");
-    modal?.setAttribute("aria-hidden", "true");
+    closeUtilityModal("bugReportModal");
 }
 
 async function loadMyBugTickets() {
@@ -6117,58 +6141,8 @@ async function submitBugReport() {
     }
 }
 
-async function shareCurrentConversation() {
-    haptic("tap");
-    if (!currentConversationId) { showToast("Ouvre d'abord une conversation à partager.", "error"); return; }
-    try {
-        const response = await fetch(`/api/conversations/${encodeURIComponent(currentConversationId)}/share`, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({hours:24})});
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Partage impossible.");
-        if (navigator.share) {
-            try { await navigator.share({title:"Conversation NathGPT", url: payload.url}); haptic("success"); return; }
-            catch (_) {}
-        }
-        await navigator.clipboard.writeText(payload.url);
-        haptic("success");
-        showToast("Lien public copié · valable 24 h", "success");
-    } catch (error) { haptic("error"); showToast(error.message || "Partage impossible.", "error"); }
-}
-
-async function openGenerationHistory() {
-    haptic("tap");
-    const modal = document.getElementById("generationHistoryModal");
-    modal?.classList.add("is-open");
-    modal?.setAttribute("aria-hidden", "false");
-    const grid = document.getElementById("generationHistoryGrid");
-    if (grid) grid.innerHTML = '<div class="generation-history-empty">Chargement…</div>';
-    try {
-        const response = await fetch("/api/generation-history", {cache:"no-store"});
-        const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Impossible de charger l'historique.");
-        generationHistoryItems = payload.items || [];
-        renderGenerationHistory();
-    } catch (error) { if (grid) grid.innerHTML = `<div class="generation-history-empty">${escapeHtml(error.message)}</div>`; }
-}
-function closeGenerationHistory() {
-    const modal = document.getElementById("generationHistoryModal");
-    modal?.classList.remove("is-open");
-    modal?.setAttribute("aria-hidden", "true");
-}
 function escapeHtml(value) {
     return String(value || "").replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-}
-function renderGenerationHistory() {
-    const grid = document.getElementById("generationHistoryGrid");
-    if (!grid) return;
-    const search = (document.getElementById("generationHistorySearch")?.value || "").trim().toLowerCase();
-    const filter = document.getElementById("generationHistoryFilter")?.value || "all";
-    const items = generationHistoryItems.filter(item => {
-        if (filter !== "all" && item.type !== filter) return false;
-        const haystack = `${item.prompt || ""} ${item.conversation_title || ""}`.toLowerCase();
-        return !search || haystack.includes(search);
-    });
-    if (!items.length) { grid.innerHTML = '<div class="generation-history-empty">Aucune génération ne correspond à cette recherche.</div>'; return; }
-    grid.innerHTML = items.map(item => `<article class="generation-history-card"><button type="button" onclick="closeGenerationHistory(); openConversation('${escapeHtml(item.conversation_id)}')"><img src="${escapeHtml(item.image_url)}" loading="lazy" alt=""><span class="generation-history-type">${item.type === 'cricut' ? 'Cricut' : 'Image'}</span><strong>${escapeHtml(item.prompt || item.conversation_title || 'Génération')}</strong><small>${escapeHtml(item.conversation_title || '')}</small></button></article>`).join("");
 }
 
 function showAppUpdateIfNeeded() {
@@ -6179,6 +6153,9 @@ function showAppUpdateIfNeeded() {
     try { releases = JSON.parse(pendingData.textContent || "[]"); }
     catch (_) { return; }
     if (!Array.isArray(releases) || releases.length === 0) return;
+
+    closeMobileHistory();
+    closeAllUtilityModals();
 
     const dialog = document.createElement("section");
     dialog.className = "app-update-dialog";
@@ -6224,13 +6201,19 @@ function showAppUpdateIfNeeded() {
         haptic("success");
         fetch("/api/changelog/seen", { method: "POST", headers: {"Content-Type": "application/json"}, body: "{}" }).catch(() => {});
         dialog.classList.add("is-closing");
-        window.setTimeout(() => dialog.remove(), 280);
+        window.setTimeout(() => {
+            dialog.remove();
+            syncOverlayScrollLock();
+        }, 280);
     };
     close.addEventListener("click", dismiss);
     card.append(eyebrow, title, intro, timeline, close);
     dialog.appendChild(card);
     document.body.appendChild(dialog);
-    window.requestAnimationFrame(() => dialog.classList.add("is-visible"));
+    window.requestAnimationFrame(() => {
+        dialog.classList.add("is-visible");
+        syncOverlayScrollLock();
+    });
 }
 
 function animateLaunchProgress() {
@@ -6304,6 +6287,27 @@ if (navigator.vibrate && !sessionStorage.getItem("nathgpt-launch-haptic")) {
     navigator.vibrate([9, 35, 13]);
     sessionStorage.setItem("nathgpt-launch-haptic", "1");
 }
+
+document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const changelog = document.querySelector(".app-update-dialog.is-visible:not(.is-closing)");
+    if (changelog) return; // Le changelog se valide explicitement pour mémoriser sa lecture.
+    const openModal = document.querySelector(".utility-modal.is-open");
+    if (openModal) {
+        closeUtilityModal(openModal.id);
+        return;
+    }
+    if (document.getElementById("mobileHistoryOverlay")?.classList.contains("is-open")) {
+        closeMobileHistory();
+    }
+});
+
+window.addEventListener("resize", () => {
+    if (window.innerWidth > 760) closeMobileHistory();
+});
+
+window.addEventListener("pageshow", syncOverlayScrollLock);
+window.addEventListener("pagehide", () => document.body.classList.remove("ui-overlay-open", "mobile-history-open"));
 
 restorePendingDiscordTurn();
 restoreCricutGeneration();
