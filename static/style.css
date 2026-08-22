@@ -4596,3 +4596,190 @@ textarea::placeholder {
     .generation-star-comet { animation: none !important; }
     .thinking-letter { opacity: 1; filter: none; transform: none; }
 }
+
+
+/* ========================================================= */
+/* NATHGPT 2026 - POLISH: THOUGHT BUBBLES / STELLAR FORGE    */
+/* ========================================================= */
+
+/* Le texte de réflexion reste volontairement flouté pendant l'organisation. */
+.thinking-preview-copy.is-organizing {
+    filter: blur(3.2px) !important;
+    opacity: .72 !important;
+    text-shadow: 0 0 13px rgba(181,196,255,.32) !important;
+}
+
+.thinking-letter {
+    display: inline-block;
+    min-width: .08em;
+    opacity: .22;
+    filter: blur(5.4px);
+    transform: translate3d(var(--thought-x, 0), var(--thought-y, 30px), 0)
+               rotate(var(--thought-rotation, 0deg)) scale(.82);
+    transform-origin: 50% 50%;
+    will-change: transform, opacity, filter;
+    animation:
+        thought-bubble-organize 1.38s cubic-bezier(.17,.84,.2,1) var(--thought-delay, 0ms) forwards,
+        thought-bubble-float 2.7s ease-in-out var(--thought-float-delay, 900ms) infinite alternate;
+}
+
+@keyframes thought-bubble-organize {
+    0% {
+        opacity: .12;
+        filter: blur(7px);
+        transform: translate3d(var(--thought-x, 0), var(--thought-y, 30px), 0)
+                   rotate(var(--thought-rotation, 0deg)) scale(.72);
+    }
+    42% {
+        opacity: .82;
+        filter: blur(4.4px);
+        transform: translate3d(0, -5px, 0) rotate(0deg) scale(1.08);
+    }
+    72% {
+        opacity: .62;
+        filter: blur(3.3px);
+        transform: translate3d(2px, -3px, 0) scale(.98);
+    }
+    100% {
+        opacity: .76;
+        filter: blur(3.2px);
+        transform: translate3d(0, 0, 0) rotate(0) scale(1);
+    }
+}
+
+@keyframes thought-bubble-float {
+    from { transform: translate3d(0, 0, 0); }
+    to { transform: translate3d(var(--thought-float-x, 2px), var(--thought-float-y, -3px), 0); }
+}
+
+/* Nouvelle ambiance de génération : ciel profond, scintillements et poussière lumineuse. */
+.image-generation-frame.is-generating {
+    background:
+        radial-gradient(circle at 50% 46%, rgba(92,102,255,.18), transparent 17%),
+        radial-gradient(circle at 23% 24%, rgba(92,211,255,.10), transparent 27%),
+        radial-gradient(circle at 81% 72%, rgba(203,112,255,.12), transparent 30%),
+        linear-gradient(145deg, #070812 0%, #090b17 48%, #05060c 100%);
+    animation: stellar-frame-breathe 5.8s ease-in-out infinite;
+}
+
+.generation-star-map i:nth-child(13) { top: 8%; left: 92%; animation-delay: .55s; transform: scale(.72); }
+.generation-star-map i:nth-child(14) { top: 35%; left: 93%; animation-delay: 1.75s; transform: scale(.48); }
+.generation-star-map i:nth-child(15) { top: 52%; left: 14%; animation-delay: 2.6s; transform: scale(.62); }
+.generation-star-map i:nth-child(16) { top: 92%; left: 22%; animation-delay: .95s; transform: scale(.44); }
+.generation-star-map i:nth-child(17) { top: 5%; left: 48%; animation-delay: 2.15s; transform: scale(.56); }
+.generation-star-map i:nth-child(18) { top: 65%; left: 42%; animation-delay: 1.05s; transform: scale(.38); }
+.generation-star-map i:nth-child(19) { top: 46%; left: 76%; animation-delay: 3.1s; transform: scale(.68); }
+.generation-star-map i:nth-child(20) { top: 73%; left: 7%; animation-delay: .15s; transform: scale(.50); }
+.generation-star-map i:nth-child(21) { top: 19%; left: 25%; animation-delay: 2.35s; transform: scale(.36); }
+.generation-star-map i:nth-child(22) { top: 86%; left: 91%; animation-delay: 1.45s; transform: scale(.46); }
+.generation-star-map i:nth-child(23) { top: 38%; left: 55%; animation-delay: .82s; transform: scale(.34); }
+.generation-star-map i:nth-child(24) { top: 58%; left: 31%; animation-delay: 2.82s; transform: scale(.40); }
+
+.generation-sparkle-field {
+    position: absolute;
+    z-index: 7;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+.generation-sparkle-field b {
+    position: absolute;
+    width: 13px;
+    height: 13px;
+    opacity: 0;
+    filter: drop-shadow(0 0 8px rgba(225,232,255,.9));
+    animation: stellar-sparkle 3.7s ease-in-out infinite;
+}
+.generation-sparkle-field b::before,
+.generation-sparkle-field b::after {
+    content: "";
+    position: absolute;
+    inset: 50% auto auto 50%;
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.95), transparent);
+    transform: translate(-50%,-50%);
+}
+.generation-sparkle-field b::after { transform: translate(-50%,-50%) rotate(90deg); }
+.generation-sparkle-field b:nth-child(1){left:18%;top:22%;animation-delay:.2s}
+.generation-sparkle-field b:nth-child(2){left:72%;top:18%;animation-delay:1.8s;transform:scale(.7)}
+.generation-sparkle-field b:nth-child(3){left:84%;top:61%;animation-delay:.9s;transform:scale(.55)}
+.generation-sparkle-field b:nth-child(4){left:29%;top:78%;animation-delay:2.5s;transform:scale(.8)}
+.generation-sparkle-field b:nth-child(5){left:51%;top:11%;animation-delay:3.1s;transform:scale(.5)}
+.generation-sparkle-field b:nth-child(6){left:9%;top:57%;animation-delay:1.25s;transform:scale(.6)}
+.generation-sparkle-field b:nth-child(7){left:64%;top:82%;animation-delay:2.05s;transform:scale(.72)}
+.generation-sparkle-field b:nth-child(8){left:43%;top:49%;animation-delay:.62s;transform:scale(.44)}
+
+.generation-stardust {
+    position: absolute;
+    z-index: 3;
+    inset: -20%;
+    pointer-events: none;
+    opacity: .34;
+    background-image:
+        radial-gradient(circle, rgba(255,255,255,.9) 0 1px, transparent 1.5px),
+        radial-gradient(circle, rgba(180,200,255,.7) 0 1px, transparent 1.4px);
+    background-size: 73px 73px, 117px 117px;
+    background-position: 0 0, 31px 47px;
+    animation: stellar-dust-drift 18s linear infinite;
+    mask-image: radial-gradient(ellipse at center, black 0 54%, transparent 79%);
+    -webkit-mask-image: radial-gradient(ellipse at center, black 0 54%, transparent 79%);
+}
+
+.generation-star-comet-two {
+    top: 69%;
+    left: -42%;
+    transform: rotate(13deg) scale(.68);
+    animation-delay: 3.25s;
+    animation-duration: 7.3s;
+}
+
+@keyframes stellar-sparkle {
+    0%, 18%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); }
+    42% { opacity: .92; transform: scale(1.05) rotate(20deg); }
+    58% { opacity: .38; transform: scale(.72) rotate(42deg); }
+}
+@keyframes stellar-dust-drift { to { transform: translate3d(73px,-73px,0) rotate(.8deg); } }
+@keyframes stellar-frame-breathe {
+    0%,100% { box-shadow: 0 30px 78px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.10), inset 0 0 80px rgba(96,119,255,.035); }
+    50% { box-shadow: 0 34px 92px rgba(0,0,0,.42), inset 0 1px rgba(255,255,255,.13), inset 0 0 125px rgba(117,105,255,.09); }
+}
+
+/* Démarrage premium : halo spectral + logo plus vivant + sortie plus propre. */
+.launch-screen {
+    background:
+        radial-gradient(circle at 50% 42%, rgba(255,255,255,.98) 0 10%, rgba(248,249,252,.95) 28%, transparent 52%),
+        radial-gradient(circle at 18% 84%, rgba(167,188,255,.21), transparent 38%),
+        radial-gradient(circle at 82% 18%, rgba(207,174,255,.18), transparent 34%),
+        #f4f5f8;
+}
+.launch-logo-stage { animation: launch-stage-arrive .9s cubic-bezier(.16,.84,.2,1) both; }
+.launch-logo-shell { animation: launch-logo-premium-float 3.6s ease-in-out .9s infinite; }
+.launch-rings { animation: launch-rings-premium 4.2s ease-in-out infinite; }
+.launch-screen.is-finished {
+    opacity: 0;
+    transform: scale(1.035);
+    filter: blur(10px) saturate(.82);
+}
+@keyframes launch-stage-arrive {
+    from { opacity: 0; transform: translateY(22px) scale(.84); filter: blur(10px); }
+    to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+@keyframes launch-logo-premium-float {
+    0%,100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-7px) scale(1.025); }
+}
+@keyframes launch-rings-premium {
+    0%,100% { opacity:.38; transform:scale(.93) rotate(0deg); }
+    50% { opacity:.72; transform:scale(1.05) rotate(8deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .thinking-letter,
+    .generation-sparkle-field b,
+    .generation-stardust,
+    .launch-logo-stage,
+    .launch-logo-shell,
+    .launch-rings { animation: none !important; }
+}

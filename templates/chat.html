@@ -373,28 +373,49 @@ function unlockNotificationSound() {
     if (notificationSoundUnlocked) {
         return;
     }
-    notificationSound.muted = true;
+
+    // iOS/Safari et Chromium exigent qu'un premier play() ait lieu pendant
+    // une vraie interaction utilisateur. Un volume quasi nul déverrouille
+    // mieux l'audio qu'un élément complètement muted sur certains appareils.
+    const previousVolume = notificationSound.volume;
+    notificationSound.muted = false;
+    notificationSound.volume = 0.001;
+    notificationSound.currentTime = 0;
     notificationSound.play()
         .then(() => {
-            notificationSound.pause();
-            notificationSound.currentTime = 0;
-            notificationSound.muted = false;
-            notificationSoundUnlocked = true;
+            window.setTimeout(() => {
+                notificationSound.pause();
+                notificationSound.currentTime = 0;
+                notificationSound.volume = previousVolume;
+                notificationSoundUnlocked = true;
+            }, 45);
         })
         .catch(() => {
-            notificationSound.muted = false;
+            notificationSound.volume = previousVolume;
         });
 }
 
 function playNotificationSound() {
     notificationSound.pause();
     notificationSound.currentTime = 0;
-    notificationSound.play().catch(() => {
-        // Le son personnalisé en arrière-plan dépend de la politique du navigateur.
-    });
+    notificationSound.muted = false;
+    notificationSound.volume = 0.72;
+
+    const attempt = notificationSound.play();
+    if (attempt && typeof attempt.catch === "function") {
+        attempt.catch(() => {
+            // Si le navigateur a reverrouillé l'audio après une mise en veille,
+            // la prochaine interaction utilisateur le réactive automatiquement.
+            notificationSoundUnlocked = false;
+            document.addEventListener("pointerdown", unlockNotificationSound, { once: true, passive: true });
+            document.addEventListener("keydown", unlockNotificationSound, { once: true });
+        });
+    }
 }
 
+notificationSound.load();
 document.addEventListener("pointerdown", unlockNotificationSound, { once: true, passive: true });
+document.addEventListener("touchend", unlockNotificationSound, { once: true, passive: true });
 document.addEventListener("keydown", unlockNotificationSound, { once: true });
 
 let imageRevealAnimationFrame = null;
@@ -1360,9 +1381,21 @@ function parseQueueStatus(message) {
         return null;
     }
 
-    const position = Math.max(1, Number(match[1]) || 1);
-    const total = Math.max(position, Number(match[2]) || position);
-    return { position, total, isProcessing: position === 1 && total === 1 };
+    const rawPosition = Math.max(1, Number(match[1]) || 1);
+    const rawTotal = Math.max(rawPosition, Number(match[2]) || rawPosition);
+
+    // Le premier slot correspond à la requête actuellement traitée.
+    // Il ne doit jamais être présenté comme une personne qui "attend".
+    const waitingPosition = Math.max(0, rawPosition - 1);
+    const waitingTotal = Math.max(0, rawTotal - 1);
+
+    return {
+        position: waitingPosition,
+        total: waitingTotal,
+        rawPosition,
+        rawTotal,
+        isProcessing: rawPosition === 1 && rawTotal === 1
+    };
 }
 
 
@@ -1406,6 +1439,11 @@ function updateQueueWaitCard() {
 
 
 function showQueueWait(queue, savedState = null) {
+    if (!queue || queue.isProcessing || queue.position <= 0 || queue.total <= 0) {
+        hideQueueWait();
+        return;
+    }
+
     const current = queueWaitState;
     const sameQueue = current
         && current.position === queue.position
@@ -1433,8 +1471,8 @@ function showQueueWait(queue, savedState = null) {
             <div class="queue-wait-ring"><div class="queue-wait-clock"><b data-queue-time>01:00</b><span>min</span></div></div>
             <div class="queue-wait-copy">
                 <span data-queue-position></span>
-                <strong>Tu es dans la file d’attente</strong>
-                <p>Une autre personne utilise NathGPT. Ta demande sera traitée dès que possible.</p>
+                <strong>Ta demande attend son tour</strong>
+                <p>Seules les requêtes réellement devant la tienne sont comptées ici.</p>
                 <small data-queue-caption></small>
             </div>
         `;
@@ -2469,13 +2507,30 @@ function organizeThinkingPreview(preview, draft) {
         const letter = document.createElement("span");
         letter.className = "thinking-letter";
         letter.textContent = character === " " ? "\u00a0" : character;
-        letter.style.setProperty("--thought-delay", Math.min(index * 7, 1150) + "ms");
+
+        // Déplacements déterministes mais variés : certaines lettres remontent
+        // du bas, d'autres descendent du haut ou dérivent latéralement, comme
+        // des petites bulles de pensée qui retrouvent progressivement leur place.
+        const x = Math.round(Math.sin(index * 1.73) * (12 + (index % 5) * 4));
+        const yDirection = index % 3 === 0 ? 1 : -1;
+        const y = yDirection * (24 + ((index * 17) % 54));
+        const rotation = Math.round(Math.cos(index * .91) * 9);
+        const floatX = Math.round(Math.sin(index * 2.11) * 3);
+        const floatY = -2 - (index % 4);
+
+        letter.style.setProperty("--thought-x", x + "px");
+        letter.style.setProperty("--thought-y", y + "px");
+        letter.style.setProperty("--thought-rotation", rotation + "deg");
+        letter.style.setProperty("--thought-float-x", floatX + "px");
+        letter.style.setProperty("--thought-float-y", floatY + "px");
+        letter.style.setProperty("--thought-delay", Math.min(index * 5, 900) + "ms");
+        letter.style.setProperty("--thought-float-delay", (900 + (index % 11) * 55) + "ms");
         letters.appendChild(letter);
     });
 
     preview.appendChild(letters);
     if (caption) {
-        caption.textContent = "Les idées prennent leur place";
+        caption.textContent = "NathGPT organise ses pensées";
     }
     if (caret) {
         caret.classList.add("is-organizing");
@@ -2554,8 +2609,14 @@ function showImageGeneration() {
 
             <div class="generation-star-map" aria-hidden="true">
                 <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
             </div>
-            <div class="generation-star-comet" aria-hidden="true"></div>
+            <div class="generation-sparkle-field" aria-hidden="true">
+                <b></b><b></b><b></b><b></b><b></b><b></b><b></b><b></b>
+            </div>
+            <div class="generation-stardust" aria-hidden="true"></div>
+            <div class="generation-star-comet generation-star-comet-one" aria-hidden="true"></div>
+            <div class="generation-star-comet generation-star-comet-two" aria-hidden="true"></div>
 
             <div class="generation-grid" aria-hidden="true"></div>
             <div class="generation-sweep" aria-hidden="true"></div>

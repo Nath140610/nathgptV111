@@ -1,0 +1,9 @@
+NathGPT - correctifs et animations (22/08/2026)
+
+- Correction du son de notification : le fichier est maintenant exactement static/sonerie.mp3 (casse compatible Linux/Render).
+- Déverrouillage audio renforcé pour Chromium, Safari/iOS et PWA après interaction utilisateur.
+- File d'attente : le slot actuellement traité n'est plus compté comme une requête en attente. Un statut 1/1 est traité comme une génération/réflexion en cours.
+- Réflexion textuelle : après l'écriture floutée, les lettres restent floues et se déplacent depuis différentes directions comme des bulles de pensée avant de se réorganiser, puis continuent un léger flottement.
+- Animation de démarrage modernisée : arrivée plus douce du logo, halo premium, respiration, anneaux et sortie avec transition lumineuse/floutée.
+- Animation de génération d'image enrichie/remplacée visuellement : champ d'étoiles étendu, scintillements, poussière stellaire, double comète et profondeur lumineuse.
+- Vérification syntaxique Python (server.py, discord_bridge.py) et JavaScript principal effectuée.
