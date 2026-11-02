@@ -1,0 +1,14 @@
+{
+  "name": "NathGPT",
+  "short_name": "NathGPT",
+  "description": "NathGPT, votre espace de conversation.",
+  "lang": "fr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#08090b",
+  "theme_color": "#08090b",
+  "icons": [
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

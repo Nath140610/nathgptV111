@@ -139,6 +139,9 @@ def test_health_aliases(tmp_path):
         async with client:
             assert (await client.get('/health')).json()['storage'] == 'sqlite'
             assert (await client.get('/api/health')).status_code == 200
+            manifest = await client.get('/manifest.webmanifest')
+            assert manifest.headers['content-type'].startswith('application/manifest+json')
+            assert manifest.json()['display'] == 'standalone'
 
     run(scenario())
 

@@ -296,3 +296,37 @@ button{touch-action:manipulation}
 .topbar-title{transition:opacity .25s ease}
 @media(max-width:700px){.island-visible .topbar-title{opacity:0}}
 input::-ms-reveal,input::-ms-clear{display:none}
+
+/* ===== Haut de page net : plus de halo flou sous la barre d'état ===== */
+.auth-page{background:radial-gradient(ellipse 120% 70% at 50% 115%,#1b1631 0%,#0b0c10 55%,#08090b 100%)}
+.auth-ambient-one{display:none}
+.auth-grid{-webkit-mask-image:radial-gradient(ellipse 70% 55% at 50% 60%,#000 15%,transparent 75%);mask-image:radial-gradient(ellipse 70% 55% at 50% 60%,#000 15%,transparent 75%)}
+
+/* ===== Clavier ouvert sur une conversation vide : la zone de texte reste en bas ===== */
+.keyboard-open .workspace.is-empty{justify-content:flex-end}
+.keyboard-open .workspace.is-empty .composer-zone{margin:auto auto 0}
+
+/* ===== iPhone / iPad : installation obligatoire sur l'écran d'accueil ===== */
+.ios-install{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;overflow-y:auto;padding:calc(24px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(110px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left));background:radial-gradient(ellipse 120% 70% at 50% 115%,#1b1631 0%,#0b0c10 55%,#08090b 100%);color:#f2f2f5}
+.ios-install-card{width:min(420px,100%);text-align:center;animation:auth-rise .7s cubic-bezier(.2,.9,.25,1.05) both}
+.ios-install-icon{position:relative;width:84px;height:84px;margin:0 auto 22px;display:grid;place-items:center}
+.ios-install-icon img{position:relative;z-index:1;width:80px;height:80px;border-radius:20px;object-fit:cover;box-shadow:0 14px 36px #000a}
+.ios-install-icon .auth-logo-ring{border-radius:26px}
+.ios-install h1{margin:0 0 10px;font-size:30px;font-weight:700;letter-spacing:-.05em}
+.ios-install-lead{margin:0 auto 22px;max-width:340px;color:#a3a6b2;font-size:15px;line-height:1.5}
+.ios-install-warning{margin:0 0 18px;padding:12px 14px;border:1px solid #ffb86b55;border-radius:14px;background:#3a2a1466;color:#ffd7a8;font-size:13px;line-height:1.45;text-align:left}
+.ios-install-steps{list-style:none;margin:0;padding:0;display:grid;gap:10px;text-align:left}
+.ios-install-steps li{display:flex;align-items:flex-start;gap:13px;padding:14px 15px;border:1px solid #ffffff12;border-radius:18px;background:linear-gradient(160deg,#1b1d26e8,#111217f2);font-size:15px;line-height:1.4;animation:auth-rise .6s cubic-bezier(.2,.9,.25,1.05) both}
+.ios-install-steps li:nth-child(2){animation-delay:.08s}.ios-install-steps li:nth-child(3){animation-delay:.16s}
+.ios-install-steps small{display:block;margin-top:3px;color:#8a8d99;font-size:12.5px}
+.ios-step-num{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:#ffffff14;color:#fff;font-size:13px;font-weight:700}
+.ios-glyph{display:inline-grid;place-items:center;width:26px;height:26px;margin-left:2px;vertical-align:middle;border-radius:7px;background:#ffffff12;color:#5ea8ff}
+.ios-glyph svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.ios-install-pointer{position:fixed;left:50%;bottom:calc(14px + env(safe-area-inset-bottom));width:46px;height:46px;margin-left:-23px;border-radius:50%;display:grid;place-items:center;background:#0a84ff;color:#fff;box-shadow:0 10px 28px #0a84ff66;animation:ios-point 1.4s ease-in-out infinite}
+.ios-install-pointer svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.ios-install.is-ipad .ios-install-pointer{top:calc(12px + env(safe-area-inset-top));bottom:auto;left:auto;right:calc(18px + env(safe-area-inset-right));margin:0;animation-name:ios-point-up}
+.ios-install.is-ipad .ios-install-pointer svg{transform:rotate(180deg)}
+.ios-install.is-ipad{padding-bottom:calc(24px + env(safe-area-inset-bottom));padding-top:calc(76px + env(safe-area-inset-top))}
+.ios-install.no-pointer .ios-install-pointer{display:none}
+@keyframes ios-point{50%{transform:translateY(8px)}}
+@keyframes ios-point-up{50%{transform:translateY(-8px)}}

@@ -781,11 +781,37 @@
     if (!document.fullscreenElement && !$('voice-panel').hidden) cancelVoice();
   });
 
-  // La session est un cookie httpOnly : on demande au serveur quel compte est connecté.
-  api('/api/auth/me')
-    .then((data) => {
-      startSession(data.account);
-      island?.flash({ leading: 'logo', label: `Bonjour, ${data.account.pseudo}` }, 2200);
-    })
-    .catch(() => showAuth());
+  // iPhone / iPad : NathGPT ne s'utilise que depuis l'écran d'accueil (mode app plein écran).
+  function requiresHomeScreen(nav = navigator, standaloneMedia = matchMedia('(display-mode: standalone)').matches) {
+    const ios = /iPhone|iPad|iPod/.test(nav.userAgent) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
+    return ios && nav.standalone !== true && !standaloneMedia;
+  }
+  function showInstallGate() {
+    const ua = navigator.userAgent;
+    const inApp = ua.match(/Instagram|FBAN|FBAV|Snapchat|TikTok|musical_ly|BytedanceWebview|Discord|LinkedInApp|Line\/|Twitter|GSA\//);
+    if (inApp) {
+      const app = { FBAN: 'Facebook', FBAV: 'Facebook', musical_ly: 'TikTok', BytedanceWebview: 'TikTok', LinkedInApp: 'LinkedIn', 'Line/': 'LINE', 'GSA/': 'Google' }[inApp[0]] || inApp[0];
+      $('ios-install-browser').textContent = `Tu es dans ${app} : l’ajout à l’écran d’accueil n’y est pas possible. Ouvre d’abord ce lien dans Safari (menu ••• › Ouvrir dans Safari).`;
+      $('ios-install-browser').hidden = false;
+    } else if (/CriOS|FxiOS|EdgiOS/.test(ua)) {
+      $('ios-install-share-hint').textContent = 'Dans la barre d’adresse en haut, ou ouvre ce lien dans Safari.';
+    }
+    const ipad = !/iPhone|iPod/.test(ua);
+    $('ios-install').classList.toggle('is-ipad', ipad || /CriOS|FxiOS|EdgiOS/.test(ua));
+    $('ios-install').classList.toggle('no-pointer', Boolean(inApp));
+    $('auth-page').hidden = true;
+    $('app-shell').hidden = true;
+    $('ios-install').hidden = false;
+  }
+
+  if (requiresHomeScreen()) showInstallGate();
+  else {
+    // La session est un cookie httpOnly : on demande au serveur quel compte est connecté.
+    api('/api/auth/me')
+      .then((data) => {
+        startSession(data.account);
+        island?.flash({ leading: 'logo', label: `Bonjour, ${data.account.pseudo}` }, 2200);
+      })
+      .catch(() => showAuth());
+  }
 })();

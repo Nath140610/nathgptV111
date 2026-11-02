@@ -60,6 +60,18 @@ assert.equal(costNode.textContent, '0,02 €');
 usage.recordUsage('bob', 'question', 'answer', { account_tokens_used: 99 });
 assert.equal(alice.tokensUsed, 2514);
 
+const gateStart = source.indexOf('  function requiresHomeScreen(');
+const gateEnd = source.indexOf('  function showInstallGate(', gateStart);
+assert(gateStart >= 0 && gateEnd > gateStart);
+const requiresHomeScreen = new Function(`${source.slice(gateStart, gateEnd)}; return requiresHomeScreen;`)();
+const iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1';
+assert.equal(requiresHomeScreen({ userAgent: iphone, standalone: false }, false), true);
+assert.equal(requiresHomeScreen({ userAgent: iphone, standalone: true }, false), false);
+assert.equal(requiresHomeScreen({ userAgent: iphone }, true), false);
+assert.equal(requiresHomeScreen({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15', platform: 'MacIntel', maxTouchPoints: 5 }, false), true); // iPadOS
+assert.equal(requiresHomeScreen({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', platform: 'MacIntel', maxTouchPoints: 0 }, false), false); // Mac
+assert.equal(requiresHomeScreen({ userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) Chrome/140 Mobile Safari/537.36', platform: 'Linux armv8l', maxTouchPoints: 5 }, false), false);
+
 (async () => {
   const bytes = new TextEncoder().encode('event: delta\r\ndata: {"text":"B"}\r\n\r\nevent: delta\ndata: {"text":"on"}\n\nevent: replace\ndata: {"text":"Bonjour 🌟"}\n\nevent: done\ndata: {}\n\n');
   let index = 0;

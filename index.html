@@ -13,6 +13,7 @@
   <meta name="format-detection" content="telephone=no">
   <link rel="icon" href="logo.png">
   <link rel="apple-touch-icon" href="logo.png">
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="styles.css">
   <title>NathGPT</title>
 </head>
@@ -79,6 +80,20 @@
       <div class="voice-direction-preview" role="group" aria-label="Aperçu manuel de la direction de la voix"><span>Aperçu manuel de l’orientation</span><div><button type="button" data-call-direction="-1">Gauche</button><button type="button" data-call-direction="0" class="active" aria-pressed="true">Face</button><button type="button" data-call-direction="1">Droite</button></div></div>
       <div class="voice-controls"><span>Agent (auto)</span><button id="voice-finish" class="voice-control voice-finish" type="button" aria-label="Terminer et envoyer" title="Terminer et envoyer"><span data-icon="mic" data-size="18"></span></button><button id="voice-cancel" class="voice-control voice-cancel" type="button" aria-label="Annuler la dictée" title="Annuler la dictée"><span data-icon="x" data-size="18"></span></button></div>
     </div>
+  </section>
+  <section id="ios-install" class="ios-install" aria-labelledby="ios-install-title" hidden>
+    <div class="ios-install-card">
+      <div class="ios-install-icon"><span class="auth-logo-ring" aria-hidden="true"></span><img src="logo.png" alt=""></div>
+      <h1 id="ios-install-title">Installe NathGPT</h1>
+      <p class="ios-install-lead">Sur iPhone et iPad, NathGPT s’utilise depuis l’écran d’accueil : plein écran, Dynamic Island et plus de barre Safari.</p>
+      <p id="ios-install-browser" class="ios-install-warning" role="alert" hidden></p>
+      <ol class="ios-install-steps">
+        <li><span class="ios-step-num">1</span><span>Touche <strong>Partager</strong> <span class="ios-glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M8 11H6a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-2"/></svg></span><small id="ios-install-share-hint">En bas de Safari, ou dans le menu <strong>•••</strong>.</small></span></li>
+        <li><span class="ios-step-num">2</span><span>Choisis <strong>Sur l’écran d’accueil</strong> <span class="ios-glyph"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg></span><small>Fais défiler la liste si tu ne le vois pas.</small></span></li>
+        <li><span class="ios-step-num">3</span><span>Touche <strong>Ajouter</strong>, puis ouvre <strong>NathGPT</strong> depuis son icône.<small>Tu te connecteras dans l’app avec ton pseudo.</small></span></li>
+      </ol>
+    </div>
+    <div class="ios-install-pointer" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v15M6 13l6 6 6-6"/></svg></div>
   </section>
   <script src="orbs.bundle.js" defer></script>
   <script src="voice.bundle.js" defer></script>

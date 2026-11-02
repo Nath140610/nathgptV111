@@ -33,6 +33,7 @@ STATIC_FILES = {
     "app.js": "app.js", "logo.png": "logo.png", "orbs.bundle.js": "orbs.bundle.js",
     "voice.bundle.js": "voice.bundle.js", "ring.bundle.js": "ring.bundle.js",
     "markdown.bundle.js": "markdown.bundle.js", "island.js": "island.js",
+    "manifest.webmanifest": "manifest.webmanifest",
 }
 
 
@@ -381,7 +382,8 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         path = SITE_DIR / name
         if not path.is_file():
             raise HTTPException(404)
-        response = FileResponse(path)
+        media_type = "application/manifest+json" if name.endswith(".webmanifest") else None
+        response = FileResponse(path, media_type=media_type)
         response.headers["Cache-Control"] = "no-store"
         return response
 
