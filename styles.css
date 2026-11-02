@@ -290,3 +290,32 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .notif-actions{display:flex;gap:8px}
 .notif-actions button{flex:1;height:40px;border:0;border-radius:12px;background:#ffffff14;color:#fff;font-size:14px;font-weight:600}
 .notif-actions .is-primary{background:#f2f2f5;color:#0b0c10}
+
+/* ===== Page Admin (comptes is_admin) ===== */
+.admin-panel{position:fixed;inset:0;z-index:160;overflow-y:auto;overscroll-behavior:contain;background:#08090b;padding:calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(18px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))}
+.admin-panel[hidden]{display:none}
+.admin-sheet{width:min(860px,100%);margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.admin-head{display:flex;align-items:center;justify-content:space-between}
+.admin-head h2{margin:0;font-size:22px;font-weight:650;letter-spacing:-.03em;color:#f2f2f5}
+.admin-status{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.admin-chip{padding:10px 12px;border:1px solid #ffffff12;border-radius:14px;background:#16171c}
+.admin-chip small{display:block;color:#80838f;font-size:11px}
+.admin-chip strong{display:block;margin-top:3px;color:#e8e8ee;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.admin-chip.ok strong{color:#7ee2a8}
+.admin-chip.busy strong{color:#f5c76b}
+.admin-chip.bad strong{color:#ff8a8a}
+.admin-screen{margin:0;overflow:hidden;border:1px solid #ffffff14;border-radius:16px;background:#000}
+.admin-screen img{display:block;width:100%;height:auto;cursor:zoom-in}
+.admin-screen figcaption{padding:8px 12px;color:#80838f;font-size:12px;background:#111216}
+.admin-actions{display:flex;gap:8px}
+.admin-actions button{flex:1;height:46px;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #ffffff14;border-radius:14px;background:#1f2026;color:#f2f2f5;font-size:14px;font-weight:600}
+.admin-actions button:disabled{opacity:.5}
+.admin-actions .is-danger{border-color:#ff6b6b40;background:#3a1a1d;color:#ffb3b3}
+.admin-actions .is-danger.is-armed{background:#ff5c5c;border-color:#ff5c5c;color:#1a0507}
+.admin-message{margin:0;padding:10px 12px;border-radius:12px;background:#1f2026;color:#d6d7de;font-size:13px;line-height:1.45}
+.admin-message.ok{background:#12301f;color:#9ff0bf}
+.admin-message.busy{background:#33290f;color:#f5d58b}
+.admin-message.bad{background:#3a1a1d;color:#ffb3b3}
+.admin-logs{border:1px solid #ffffff12;border-radius:14px;background:#111216}
+.admin-logs summary{padding:12px 14px;color:#d6d7de;font-size:14px;font-weight:600;cursor:pointer}
+.admin-logs pre{margin:0;max-height:45vh;overflow:auto;padding:0 14px 14px;color:#b4b6c2;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}

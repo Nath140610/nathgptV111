@@ -14,6 +14,9 @@ create table if not exists public.nathgpt_accounts (
   created_at      timestamptz not null default now()
 );
 
+-- Administrateurs : cocher is_admin (Table Editor > nathgpt_accounts) donne accès à la page Admin.
+alter table public.nathgpt_accounts add column if not exists is_admin boolean not null default false;
+
 -- Sessions : seul le SHA-256 de l'identifiant du cookie est stocké.
 create table if not exists public.nathgpt_sessions (
   id_hash     text primary key,

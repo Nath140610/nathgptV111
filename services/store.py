@@ -87,6 +87,8 @@ class SQLiteStore:
         with self._connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_accounts (key TEXT PRIMARY KEY, pseudo TEXT NOT NULL, password_hash TEXT NOT NULL, tokens_used INTEGER NOT NULL DEFAULT 0, usage_estimated INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_sessions (id_hash TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, expires_at REAL NOT NULL)')
+            if 'is_admin' not in {row[1] for row in db.execute('PRAGMA table_info(nathgpt_accounts)')}:
+                db.execute('ALTER TABLE nathgpt_accounts ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
             db.execute("CREATE TABLE IF NOT EXISTS nathgpt_conversations (id TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT '', messages TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
 
     def _connect(self) -> sqlite3.Connection:
@@ -101,7 +103,7 @@ class SQLiteStore:
     def _create_account(self, key, pseudo, password_hash):
         with self.lock, self._connect() as db:
             try:
-                db.execute('INSERT INTO nathgpt_accounts VALUES (?, ?, ?, 0, 0, ?)', (key, pseudo, password_hash, time.time()))
+                db.execute('INSERT INTO nathgpt_accounts (key, pseudo, password_hash, created_at) VALUES (?, ?, ?, ?)', (key, pseudo, password_hash, time.time()))
                 return True
             except sqlite3.IntegrityError:
                 return False
@@ -116,6 +118,10 @@ class SQLiteStore:
 
     async def get_account(self, key: str) -> dict | None:
         return await self._run(self._get_account, key)
+
+    async def is_admin(self, key: str) -> bool:
+        account = await self.get_account(key)
+        return bool(account and account.get('is_admin'))
 
     def _create_session(self, key):
         sid = secrets.token_urlsafe(32)
@@ -248,6 +254,15 @@ class SupabaseStore:
     async def get_account(self, key) -> dict | None:
         rows = (await self._request('GET', '/nathgpt_accounts', params={'key': f'eq.{key}', 'select': 'key,pseudo,password_hash,tokens_used,usage_estimated'})).json()
         return rows[0] if rows else None
+
+    async def is_admin(self, key) -> bool:
+        # Lu à chaque demande : retirer la case dans Supabase coupe l'accès immédiatement.
+        # Colonne absente (schema.sql pas encore relancé) : personne n'est admin, le reste du site marche.
+        try:
+            rows = (await self._request('GET', '/nathgpt_accounts', params={'key': f'eq.{key}', 'select': 'is_admin'})).json()
+        except StoreError:
+            return False
+        return bool(rows and rows[0].get('is_admin') is True)
 
     async def create_session(self, key) -> str:
         sid = secrets.token_urlsafe(32)

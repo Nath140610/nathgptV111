@@ -60,7 +60,7 @@
       <input id="search-input" class="search-input" type="search" placeholder="Rechercher une conversation" aria-label="Rechercher une conversation" hidden>
       <div class="sidebar-section-title">Conversations</div>
       <nav id="chat-list" class="chat-list" aria-label="Conversations"></nav>
-      <div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span> NathGPT connecté</div><div class="profile-wrap" data-menu><button id="profile-button" class="profile-button" aria-expanded="false"><span id="avatar" class="avatar"></span><span class="profile-name"><span id="profile-name"></span><small>Compte NathGPT</small></span><span data-icon="more" data-size="18"></span></button><div id="profile-menu" class="popover profile-popover" hidden><button id="logout-button"><span data-icon="logout" data-size="16"></span> Se déconnecter</button></div></div></div>
+      <div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span> NathGPT connecté</div><div class="profile-wrap" data-menu><button id="profile-button" class="profile-button" aria-expanded="false"><span id="avatar" class="avatar"></span><span class="profile-name"><span id="profile-name"></span><small>Compte NathGPT</small></span><span data-icon="more" data-size="18"></span></button><div id="profile-menu" class="popover profile-popover" hidden><button id="admin-button" hidden><span data-icon="shield" data-size="16"></span> Administration</button><button id="logout-button"><span data-icon="logout" data-size="16"></span> Se déconnecter</button></div></div></div>
     </aside>
     <main class="main-panel">
       <header class="topbar"><button id="open-sidebar" class="icon-button mobile-menu" aria-label="Ouvrir le menu"><span data-icon="menu" data-size="20"></span></button><div class="topbar-title"><span id="topbar-title-text">NathGPT</span> <span data-icon="chevron" data-size="15"></span></div><div class="topbar-right"><span class="topbar-pill"><span class="status-dot"></span> Espace personnel</span><button id="topbar-new" class="icon-button topbar-new" aria-label="Nouvelle conversation"><span data-icon="plus" data-size="19"></span></button></div></header>
@@ -79,6 +79,16 @@
       <div class="voice-card-center"><p id="voice-transcript" class="voice-transcript" aria-live="polite">Je vous écoute…</p><p id="voice-hint" class="voice-hint">Parlez en français, puis terminez pour envoyer. La transcription peut utiliser le service vocal du navigateur.</p><p id="voice-error" class="voice-error" role="alert" hidden></p></div>
       <div class="voice-direction-preview" role="group" aria-label="Aperçu manuel de la direction de la voix"><span>Aperçu manuel de l’orientation</span><div><button type="button" data-call-direction="-1">Gauche</button><button type="button" data-call-direction="0" class="active" aria-pressed="true">Face</button><button type="button" data-call-direction="1">Droite</button></div></div>
       <div class="voice-controls"><span>Agent (auto)</span><button id="voice-finish" class="voice-control voice-finish" type="button" aria-label="Terminer et envoyer" title="Terminer et envoyer"><span data-icon="mic" data-size="18"></span></button><button id="voice-cancel" class="voice-control voice-cancel" type="button" aria-label="Annuler la dictée" title="Annuler la dictée"><span data-icon="x" data-size="18"></span></button></div>
+    </div>
+  </section>
+  <section id="admin-panel" class="admin-panel" aria-labelledby="admin-title" hidden>
+    <div class="admin-sheet">
+      <header class="admin-head"><h2 id="admin-title">Administration</h2><button id="admin-close" class="icon-button" aria-label="Fermer"><span data-icon="x" data-size="18"></span></button></header>
+      <div id="admin-status" class="admin-status" aria-live="polite"></div>
+      <figure class="admin-screen"><img id="admin-screen" alt="Écran de la VM NathGPT" hidden><figcaption id="admin-screen-caption">Chargement de l’écran…</figcaption></figure>
+      <div class="admin-actions"><button id="admin-refresh" type="button"><span data-icon="refresh" data-size="16"></span> Actualiser</button><button id="admin-restart" type="button" class="is-danger"><span data-icon="power" data-size="16"></span> <span id="admin-restart-label">Relancer NathGPT</span></button></div>
+      <p id="admin-message" class="admin-message" hidden></p>
+      <details id="admin-logs-box" class="admin-logs"><summary>Logs de NathGPT</summary><pre id="admin-logs">Chargement…</pre></details>
     </div>
   </section>
   <section id="ios-install" class="ios-install" aria-labelledby="ios-install-title" hidden>

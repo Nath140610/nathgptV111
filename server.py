@@ -251,7 +251,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         if not await store.create_account(key, pseudo, password_hash):
             raise HTTPException(409, detail="Ce pseudo est déjà utilisé.")
         sid = await store.create_session(key)
-        return session_response({"ok": True, "account": {"key": key, "pseudo": pseudo, "tokens_used": 0, "usage_estimated": False}}, request, sid)
+        return session_response({"ok": True, "account": {"key": key, "pseudo": pseudo, "tokens_used": 0, "usage_estimated": False, "is_admin": False}}, request, sid)
 
     @app.post("/api/auth/login")
     async def login(request: Request):
@@ -263,12 +263,14 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(401, detail="Pseudo ou mot de passe incorrect.")
         await store.revoke(request.cookies.get(COOKIE_NAME))
         sid = await store.create_session(key)
-        account = {"key": saved["key"], "pseudo": saved["pseudo"], "tokens_used": int(saved.get("tokens_used") or 0), "usage_estimated": bool(saved.get("usage_estimated"))}
+        account = {"key": saved["key"], "pseudo": saved["pseudo"], "tokens_used": int(saved.get("tokens_used") or 0), "usage_estimated": bool(saved.get("usage_estimated")),
+                   "is_admin": await store.is_admin(key)}
         return session_response({"ok": True, "account": account}, request, sid)
 
     @app.get("/api/auth/me")
     async def me(request: Request):
-        return {"ok": True, "account": await current_account(request)}
+        account = await current_account(request)
+        return {"ok": True, "account": {**account, "is_admin": await store.is_admin(account["key"])}}
 
     @app.post("/api/session/logout")
     async def logout(request: Request):
@@ -277,6 +279,57 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         response = JSONResponse({"ok": True})
         response.delete_cookie(COOKIE_NAME, path="/")
         return response
+
+    # Administration : réservée aux comptes dont la case is_admin est cochée dans Supabase.
+    async def admin_account(request: Request) -> dict:
+        account = await current_account(request)
+        if not await store.is_admin(account["key"]):
+            raise HTTPException(403, detail="Accès réservé aux administrateurs.")
+        return account
+
+    async def admin_upstream(method: str, path: str) -> httpx.Response:
+        try:
+            response = await client.admin(method, path)
+        except httpx.HTTPError:
+            raise HTTPException(502, detail="La VM NathGPT ne répond pas.") from None
+        if response.status_code == 401:
+            raise HTTPException(502, detail="Token API refusé par la VM.")
+        if response.status_code == 404:
+            raise HTTPException(502, detail="API de la VM trop ancienne : relance TOUT_FAIRE_TOUT_SEUL.bat.")
+        if response.status_code >= 400:
+            raise HTTPException(502, detail="La VM NathGPT a renvoyé une erreur.")
+        return response
+
+    @app.get("/api/admin/status")
+    async def admin_status(request: Request):
+        await admin_account(request)
+        try:
+            vm = (await admin_upstream("GET", "/admin/status")).json()
+        except HTTPException as error:
+            return {"ok": True, "online": False, "message": error.detail, "active_generations": gate.global_active}
+        return {"ok": True, "online": True, "vm": vm, "active_generations": gate.global_active}
+
+    @app.get("/api/admin/screenshot")
+    async def admin_screenshot(request: Request):
+        await admin_account(request)
+        response = await admin_upstream("GET", "/admin/screenshot")
+        if response.headers.get("content-type", "").split(";")[0] != "image/jpeg" or len(response.content) > MAX_IMAGE_BYTES:
+            raise HTTPException(502, detail="Capture d'écran invalide.")
+        return Response(response.content, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+    @app.get("/api/admin/logs")
+    async def admin_logs(request: Request):
+        await admin_account(request)
+        lines = (await admin_upstream("GET", "/admin/logs")).json().get("lines") or []
+        return {"ok": True, "lines": [str(line)[:2000] for line in lines[-200:]]}
+
+    @app.post("/api/admin/restart")
+    async def admin_restart(request: Request):
+        check_origin(request)
+        account = await admin_account(request)
+        await admin_upstream("POST", "/admin/restart")
+        LOG.warning("Relance de NathGPT demandée par %s", account["key"])
+        return {"ok": True}
 
     @app.get("/api/conversations")
     async def list_conversations(request: Request):

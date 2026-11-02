@@ -15,6 +15,8 @@
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/>',
+    power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
     paperclip: '<path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
     file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
@@ -266,11 +268,12 @@
     $('profile-name').textContent = account.pseudo;
     $('avatar').textContent = account.pseudo[0].toUpperCase();
     $('welcome-name').textContent = account.pseudo;
+    $('admin-button').hidden = !account.isAdmin;
     renderUsageCost();
     renderAll();
   }
   function startSession(data) {
-    account = { key: data.key, pseudo: data.pseudo, tokensUsed: Number(data.tokens_used) || 0, usageEstimated: Boolean(data.usage_estimated) };
+    account = { key: data.key, pseudo: data.pseudo, tokensUsed: Number(data.tokens_used) || 0, usageEstimated: Boolean(data.usage_estimated), isAdmin: data.is_admin === true };
     chats = restoreChats(account.key);
     activeId = null;
     dirtyChats.clear();
@@ -800,13 +803,134 @@
     clearTimeout(syncTimer);
     if (dirtyChats.size) flushChats();
     api('/api/session/logout', { method: 'POST' }).catch(() => {});
+    closeAdmin();
     account = null; chats = []; activeId = null; dirtyChats.clear(); closeMenu(); showAuth();
   });
+
+  // Administration : écran de la VM, état, logs et relance de NathGPT (comptes is_admin uniquement).
+  let adminTimer = 0;
+  let adminShot = '';
+  let adminRestartArmed = 0;
+  function formatDuration(seconds) {
+    const days = Math.floor(seconds / 86400), hours = Math.floor(seconds % 86400 / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    return days ? `${days} j ${hours} h` : hours ? `${hours} h ${minutes} min` : `${minutes} min`;
+  }
+  function adminMessage(text, tone = '') {
+    $('admin-message').textContent = text;
+    $('admin-message').className = `admin-message ${tone}`;
+    $('admin-message').hidden = !text;
+  }
+  function renderAdminStatus(data) {
+    const vm = data.vm || {};
+    const memory = vm.memory?.total ? `${((vm.memory.total - vm.memory.available) / 1073741824).toFixed(1)} / ${(vm.memory.total / 1073741824).toFixed(1)} Go` : '—';
+    const chips = data.online ? [
+      ['API', 'En ligne', 'ok'],
+      ['Chromium', vm.chromium ? 'Ouvert' : 'Arrêté', vm.chromium ? 'ok' : 'bad'],
+      ['État', vm.busy ? 'Génère une réponse' : 'Libre', vm.busy ? 'busy' : 'ok'],
+      ['Actif depuis', formatDuration(Number(vm.uptime) || 0), ''],
+      ['Mémoire', memory, ''],
+      ['Charge', Array.isArray(vm.load) ? vm.load.join(' · ') : '—', ''],
+    ] : [['API', data.message || 'Hors ligne', 'bad']];
+    $('admin-status').innerHTML = chips.map(([label, value, tone]) => `<div class="admin-chip ${tone}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
+    return Boolean(data.online);
+  }
+  async function refreshAdminStatus() {
+    try { return renderAdminStatus(await api('/api/admin/status')); }
+    catch (error) { renderAdminStatus({ online: false, message: error.message }); return false; }
+  }
+  async function refreshAdminScreen() {
+    try {
+      const response = await fetch('/api/admin/screenshot', { credentials: 'same-origin', cache: 'no-store' });
+      if (!response.ok) throw new Error(serverError(response.status, (await response.json().catch(() => ({}))).detail));
+      const url = URL.createObjectURL(await response.blob());
+      if (adminShot) URL.revokeObjectURL(adminShot);
+      adminShot = url;
+      $('admin-screen').src = url;
+      $('admin-screen').hidden = false;
+      $('admin-screen-caption').textContent = `Écran de la VM · ${new Date().toLocaleTimeString('fr-FR')}`;
+    } catch (error) {
+      $('admin-screen-caption').textContent = `Écran indisponible : ${error.message}`;
+    }
+  }
+  async function refreshAdminLogs() {
+    if (!$('admin-logs-box').open) return;
+    try {
+      const { lines } = await api('/api/admin/logs');
+      const box = $('admin-logs');
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 30;
+      box.textContent = lines.length ? lines.join('\n') : 'Aucun log.';
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    } catch (error) { $('admin-logs').textContent = error.message; }
+  }
+  function refreshAdmin() {
+    return Promise.all([refreshAdminStatus(), refreshAdminScreen(), refreshAdminLogs()]);
+  }
+  function scheduleAdmin(delay = 3000) {
+    clearTimeout(adminTimer);
+    adminTimer = setTimeout(async () => {
+      if ($('admin-panel').hidden) return;
+      if (document.visibilityState === 'visible') await refreshAdmin();
+      scheduleAdmin();
+    }, delay);
+  }
+  function openAdmin() {
+    if (!account?.isAdmin) return;
+    closeMenu(); closeSidebar();
+    adminMessage('');
+    $('admin-panel').hidden = false;
+    refreshAdmin().finally(() => scheduleAdmin());
+  }
+  function closeAdmin() {
+    clearTimeout(adminTimer);
+    $('admin-panel').hidden = true;
+    disarmRestart();
+  }
+  function disarmRestart() {
+    clearTimeout(adminRestartArmed);
+    adminRestartArmed = 0;
+    $('admin-restart').classList.remove('is-armed');
+    $('admin-restart-label').textContent = 'Relancer NathGPT';
+  }
+  async function restartNathGPT() {
+    if (!adminRestartArmed) {
+      // Deux touchers : évite une relance accidentelle pendant une réponse.
+      $('admin-restart').classList.add('is-armed');
+      $('admin-restart-label').textContent = 'Toucher pour confirmer';
+      adminRestartArmed = setTimeout(disarmRestart, 4000);
+      return;
+    }
+    disarmRestart();
+    $('admin-restart').disabled = true;
+    adminMessage('Relance en cours… NathGPT redémarre, ça prend environ 30 secondes.', 'busy');
+    try {
+      await api('/api/admin/restart', { method: 'POST' });
+      const deadline = Date.now() + 120000;
+      await wait(5000);
+      let back = false;
+      while (!back && Date.now() < deadline && !$('admin-panel').hidden) {
+        back = await refreshAdminStatus();
+        if (!back) await wait(3000);
+      }
+      if (back) { adminMessage('NathGPT est relancé.', 'ok'); refreshAdminScreen(); }
+      else if (!$('admin-panel').hidden) adminMessage('NathGPT ne répond toujours pas après 2 minutes. Regarde les logs.', 'bad');
+    } catch (error) {
+      adminMessage(`Relance impossible : ${error.message}`, 'bad');
+    } finally {
+      $('admin-restart').disabled = false;
+    }
+  }
+  $('admin-button').addEventListener('click', openAdmin);
+  $('admin-close').addEventListener('click', closeAdmin);
+  $('admin-refresh').addEventListener('click', () => { refreshAdmin(); scheduleAdmin(); });
+  $('admin-restart').addEventListener('click', restartNathGPT);
+  $('admin-logs-box').addEventListener('toggle', refreshAdminLogs);
+  $('admin-screen').addEventListener('click', () => { if (adminShot) window.open(adminShot, '_blank', 'noopener'); });
   window.addEventListener('beforeunload', () => pendingRequest?.abort());
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && account) { event.preventDefault(); newChat(); }
     if (event.key === 'Escape') {
       if (!$('voice-panel').hidden) { event.preventDefault(); cancelVoice(); }
+      else if (!$('admin-panel').hidden) closeAdmin();
       else { closeMenu(); closeUsageInfo(); closeSidebar(); }
     }
   });

@@ -217,6 +217,13 @@ class NathGPTClient:
             await client.aclose()
             raise
 
+    async def admin(self, method: str, path: str) -> httpx.Response:
+        """Routes /admin/* de l'API (état, capture d'écran, logs, relance), avec le même token."""
+        base = self.url.removesuffix("/v1/ask")
+        timeout = httpx.Timeout(connect=5, read=20, write=10, pool=5)
+        async with httpx.AsyncClient(timeout=timeout, transport=self.transport, follow_redirects=False, trust_env=False) as client:
+            return await client.request(method, base + path, headers={"Authorization": f"Bearer {self.token}"})
+
     @staticmethod
     async def events(response: httpx.Response):
         if "application/json" in response.headers.get("content-type", ""):
