@@ -25,6 +25,8 @@ SESSION_SECONDS = 60 * 60 * 24 * 30
 SALT_ALPHABET = string.ascii_letters + string.digits
 IMAGE_BUCKET = 'nathgpt-images'
 IMAGE_TYPES = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'}
+IMAGE_TTL_SECONDS = 60 * 60 * 24  # images générées gardées 1 jour, puis supprimées
+PURGE_BATCH = 1000
 
 
 def image_folder(account_key: str) -> str:
@@ -217,6 +219,18 @@ class SQLiteStore:
     async def load_image(self, key: str, name: str) -> bytes | None:
         return await self._run(self._load_image, key, name)
 
+    def _purge_images(self):
+        limit = time.time() - IMAGE_TTL_SECONDS
+        removed = 0
+        for path in (self.path.parent / 'images').glob('*/*'):
+            if path.is_file() and path.stat().st_mtime < limit:
+                path.unlink(missing_ok=True)
+                removed += 1
+        return removed
+
+    async def purge_images(self) -> int:
+        return await self._run(self._purge_images)
+
 
 class SupabaseStore:
     """Production : Supabase via son API REST, avec la clé secrète du serveur."""
@@ -328,3 +342,22 @@ class SupabaseStore:
         if response.status_code >= 400:
             raise StoreError(f'Supabase Storage HTTP {response.status_code}')
         return response.content
+
+    async def purge_images(self) -> int:
+        """Supprime les images de plus d'un jour (liste via SQL, suppression via l'API Storage)."""
+        removed = 0
+        for _batch in range(20):  # au plus 20 000 images par passage
+            rows = await self._rpc('nathgpt_expired_images', {'p_limit': PURGE_BATCH})
+            names = [row['name'] for row in rows if isinstance(row, dict) and isinstance(row.get('name'), str)]
+            if not names:
+                return removed
+            try:
+                response = await self.storage.request('DELETE', f'/object/{IMAGE_BUCKET}', json={'prefixes': names})
+            except httpx.HTTPError as error:
+                raise StoreError('Supabase Storage injoignable') from error
+            if response.status_code >= 400:
+                raise StoreError(f'Supabase Storage HTTP {response.status_code}')
+            removed += len(names)
+            if len(names) < PURGE_BATCH:
+                return removed
+        return removed

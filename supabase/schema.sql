@@ -105,5 +105,17 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('nathgpt-images', 'nathgpt-images', false, 20971520, array['image/png', 'image/jpeg', 'image/webp'])
 on conflict (id) do nothing;
 
+-- Images de plus d'un jour : le serveur les liste avec cette fonction (toutes les heures),
+-- puis les supprime par l'API Storage (Supabase interdit de supprimer des fichiers en SQL).
+create or replace function public.nathgpt_expired_images(p_limit integer default 1000)
+returns table (name text) language sql stable security definer set search_path = '' as $$
+  select o.name from storage.objects o
+   where o.bucket_id = 'nathgpt-images' and o.created_at < now() - interval '1 day'
+   order by o.created_at
+   limit least(greatest(p_limit, 1), 1000);
+$$;
+revoke execute on function public.nathgpt_expired_images(integer) from public, anon, authenticated;
+grant execute on function public.nathgpt_expired_images(integer) to service_role;
+
 -- Facultatif : purge quotidienne avec pg_cron (Database > Extensions > pg_cron), puis :
 -- select cron.schedule('nathgpt-purge-sessions', '0 4 * * *', 'select public.nathgpt_purge_sessions()');

@@ -5,6 +5,7 @@ import base64
 import io
 import json
 import os
+import time
 
 import httpx
 from PIL import Image
@@ -95,5 +96,66 @@ def test_supabase_storage_paths():
         assert upload.url.path == expected and download.url.path == expected
         assert upload.headers['content-type'] == 'image/png'
         assert upload.headers['apikey'] == 'sb_secret_test'
+
+    run(scenario())
+
+
+def test_sqlite_images_deleted_after_one_day(tmp_path):
+    from services.store import IMAGE_TTL_SECONDS, SQLiteStore
+
+    async def scenario():
+        store = SQLiteStore(tmp_path / 'db.sqlite3')
+        await store.save_image('alice', 'a' * 32 + '.png', b'vieille', 'image/png')
+        await store.save_image('alice', 'b' * 32 + '.png', b'recente', 'image/png')
+        old = store._image_path('alice', 'a' * 32 + '.png')
+        past = time.time() - IMAGE_TTL_SECONDS - 60
+        os.utime(old, (past, past))
+        assert await store.purge_images() == 1
+        assert await store.load_image('alice', 'a' * 32 + '.png') is None
+        assert await store.load_image('alice', 'b' * 32 + '.png') == b'recente'
+
+    run(scenario())
+
+
+def test_supabase_purge_expired_images():
+    calls = []
+    expired = [{'name': f'{image_folder("alice")}/{"c" * 32}.png'}, {'name': f'{image_folder("bob")}/{"d" * 32}.jpg'}]
+
+    def handler(request):
+        calls.append(request)
+        if request.url.path == '/rest/v1/rpc/nathgpt_expired_images':
+            assert json.loads(request.content) == {'p_limit': 1000}
+            return httpx.Response(200, json=expired if len(calls) == 1 else [])
+        assert request.method == 'DELETE' and request.url.path == '/storage/v1/object/nathgpt-images'
+        return httpx.Response(200, json=[])
+
+    async def scenario():
+        store = SupabaseStore('https://exemple.supabase.co', 'sb_secret_test', transport=httpx.MockTransport(handler))
+        assert await store.purge_images() == 2
+        rpc, delete = calls
+        assert json.loads(delete.content) == {'prefixes': [row['name'] for row in expired]}
+        assert delete.headers['apikey'] == 'sb_secret_test'
+
+    run(scenario())
+
+
+def test_purge_runs_at_startup(tmp_path):
+    from services.store import SQLiteStore
+    seen = []
+
+    async def fake_purge(self):
+        seen.append(True)
+        return 0
+
+    async def scenario():
+        original = SQLiteStore.purge_images
+        SQLiteStore.purge_images = fake_purge
+        try:
+            app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'))
+            async with app.router.lifespan_context(app):
+                await asyncio.sleep(0.05)
+        finally:
+            SQLiteStore.purge_images = original
+        assert seen
 
     run(scenario())

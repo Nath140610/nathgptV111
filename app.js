@@ -474,8 +474,15 @@
   function renderImages(message) {
     const images = safeImages(message);
     if (!images.length) return '';
-    return `<div class="message-images">${images.map((image, index) => `<figure class="generated-image"><a href="${escapeHtml(image.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(image.url)}" alt="Image générée ${index + 1}" loading="lazy"></a><a class="image-download" href="${escapeHtml(image.url)}" download="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}">${icon('arrow-up', 14)} Télécharger</a></figure>`).join('')}</div>`;
+    return `<div class="message-images">${images.map((image, index) => `<figure class="generated-image"><a href="${escapeHtml(image.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(image.url)}" alt="Image générée ${index + 1}" loading="lazy"></a><a class="image-download" href="${escapeHtml(image.url)}" download="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}">${icon('arrow-up', 14)} Télécharger</a></figure>`).join('')}<p class="image-ttl">Image gardée 24 h : télécharge-la pour la conserver.</p></div>`;
   }
+  // Images de plus d'un jour : supprimées du serveur, on affiche un encart à la place d'une image cassée.
+  document.addEventListener('error', (event) => {
+    const figure = event.target instanceof HTMLImageElement ? event.target.closest('.generated-image') : null;
+    if (!figure || figure.classList.contains('is-expired')) return;
+    figure.classList.add('is-expired');
+    figure.innerHTML = `<div class="image-expired">${icon('file', 20)}<span>Image expirée</span><small>Les images sont gardées 24 h.</small></div>`;
+  }, true);
   function renderAttachments() {
     $('attachments').hidden = attachments.length === 0;
     $('attachments').innerHTML = attachments.map((file, index) => `<span>${icon('paperclip', 14)}${escapeHtml(file.name)}<button data-remove-file="${index}" aria-label="Retirer ${escapeHtml(file.name)}">${icon('x', 13)}</button></span>`).join('');

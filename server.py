@@ -12,6 +12,7 @@ import re
 import time
 import uuid
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -34,6 +35,7 @@ MAX_MESSAGES = 500
 CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+PURGE_INTERVAL_SECONDS = 60 * 60
 LOG = logging.getLogger("nathgpt.site")
 STATIC_FILES = {
     "": "index.html", "index.html": "index.html", "styles.css": "styles.css",
@@ -207,7 +209,25 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     gate = RateGate()
     auth_gate = AuthGate()
     client = NathGPTClient(settings.api_url, settings.api_token, transport=transport)
-    app = FastAPI(title="NathGPT", docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Images générées : gardées 1 jour. Nettoyage au démarrage, puis toutes les heures.
+        async def purge_forever():
+            while True:
+                try:
+                    removed = await store.purge_images()
+                    if removed:
+                        LOG.info("%s image(s) de plus d'un jour supprimée(s)", removed)
+                except Exception:
+                    LOG.warning("Nettoyage des images impossible", exc_info=True)
+                await asyncio.sleep(PURGE_INTERVAL_SECONDS)
+        task = asyncio.create_task(purge_forever())
+        try:
+            yield
+        finally:
+            task.cancel()
+
+    app = FastAPI(title="NathGPT", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store = store
     app.state.gate = gate
 

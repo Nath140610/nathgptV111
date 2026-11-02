@@ -319,3 +319,8 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .admin-logs{border:1px solid #ffffff12;border-radius:14px;background:#111216}
 .admin-logs summary{padding:12px 14px;color:#d6d7de;font-size:14px;font-weight:600;cursor:pointer}
 .admin-logs pre{margin:0;max-height:45vh;overflow:auto;padding:0 14px 14px;color:#b4b6c2;font:11px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.image-ttl{grid-column:1/-1;margin:0;color:#7c7f8b;font-size:11.5px}
+.generated-image.is-expired{display:grid;place-items:center;min-height:150px;animation:none}
+.image-expired{display:flex;flex-direction:column;align-items:center;gap:5px;padding:20px;color:#9a9caa;text-align:center}
+.image-expired span{color:#d6d7de;font-size:14px;font-weight:600}
+.image-expired small{font-size:12px}
