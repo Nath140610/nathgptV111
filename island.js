@@ -46,6 +46,7 @@
     offline: `<span class="di-glyph di-icon di-offline">${svg('<path d="m2 2 20 20M8.5 16.5a5 5 0 0 1 7 0M5 13a10 10 0 0 1 5.2-2.8M19 13a10 10 0 0 0-2-1.6M2 8.8a15 15 0 0 1 4.2-2.7M22 8.8A15 15 0 0 0 10.7 5"/><circle cx="12" cy="20" r=".6"/>')}</span>`,
     sparkles: `<span class="di-glyph di-icon di-sparkles">${svg('<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"/>')}</span>`,
     stop: '<span class="di-glyph di-stop"><i></i></span>',
+    bell: `<span class="di-glyph di-icon di-bell">${svg('<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"/><path d="M10 20a2 2 0 0 0 4 0"/>')}</span>`,
     user: `<span class="di-glyph di-icon">${svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>')}</span>`,
   };
   const formatElapsed = (startedAt) => {

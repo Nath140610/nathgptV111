@@ -1,0 +1,99 @@
+"""Images générées : reçues de l'API, enregistrées, servies uniquement à leur propriétaire."""
+
+import asyncio
+import base64
+import io
+import json
+import os
+
+import httpx
+from PIL import Image
+
+from server import Settings, create_app
+from services.store import SupabaseStore, image_folder
+
+PASSWORD = 'motdepasse-solide'
+
+
+def big_png() -> bytes:
+    # Bruit aléatoire : le PNG dépasse 1 Mo, comme une vraie image ChatGPT.
+    image = Image.frombytes('RGB', (700, 700), os.urandom(700 * 700 * 3))
+    buffer = io.BytesIO()
+    image.save(buffer, format='PNG')
+    return buffer.getvalue()
+
+
+def run(coroutine):
+    return asyncio.run(coroutine)
+
+
+def test_image_stream_saved_and_private(tmp_path):
+    png = big_png()
+    assert len(png) > 1_000_000
+    encoded = base64.b64encode(png).decode()
+    sent = []
+
+    def upstream(request):
+        sent.append(json.loads(request.content))
+        image_event = json.dumps({'mime_type': 'image/png', 'filename': 'image_1.png', 'base64': encoded, 'b64_json': encoded})
+        body = f'event: image\ndata: {image_event}\n\nevent: done\ndata: {{"type":"image"}}\n\n'.encode()
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=body)
+
+    async def scenario():
+        app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'), transport=httpx.MockTransport(upstream))
+        alice = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver')
+        bob = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver')
+        async with alice, bob:
+            await alice.post('/api/auth/signup', json={'pseudo': 'alice', 'password': PASSWORD})
+            await bob.post('/api/auth/signup', json={'pseudo': 'bob', 'password': PASSWORD})
+            response = await alice.post('/api/chat', json={'prompt': 'un chat', 'conversation_id': 'conversation_1', 'stream': True, 'mode': 'Image'})
+            assert response.status_code == 200
+            assert sent[0]['response_type'] == 'image'
+            image_line = response.text.split('event: image\ndata: ', 1)[1].split('\n', 1)[0]
+            event = json.loads(image_line)
+            assert event['url'].startswith('/api/images/') and event['url'].endswith('.png')
+            assert 'base64' not in response.text  # le navigateur reçoit un lien, pas des Mo de base64
+            served = await alice.get(event['url'])
+            assert served.status_code == 200 and served.content == png
+            assert served.headers['content-type'] == 'image/png'
+            assert (await bob.get(event['url'])).status_code == 404
+            assert (await alice.get('/api/images/..%2Fdb.sqlite3')).status_code == 404
+
+    run(scenario())
+
+
+def test_invalid_image_is_rejected(tmp_path):
+    def upstream(_request):
+        bad = json.dumps({'mime_type': 'image/png', 'base64': base64.b64encode(b'<html>pas une image</html>').decode()})
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=f'event: image\ndata: {bad}\n\n'.encode())
+
+    async def scenario():
+        app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'), transport=httpx.MockTransport(upstream))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            await client.post('/api/auth/signup', json={'pseudo': 'alice', 'password': PASSWORD})
+            response = await client.post('/api/chat', json={'prompt': 'x', 'conversation_id': 'conversation_1', 'stream': True})
+            assert 'event: error' in response.text and 'image_error' in response.text
+
+    run(scenario())
+
+
+def test_supabase_storage_paths():
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        if request.method == 'GET':
+            return httpx.Response(200, content=b'PNGDATA')
+        return httpx.Response(200, json={'Key': 'ok'})
+
+    async def scenario():
+        store = SupabaseStore('https://exemple.supabase.co', 'sb_secret_test', transport=httpx.MockTransport(handler))
+        await store.save_image('élodie', 'a' * 32 + '.png', b'PNGDATA', 'image/png')
+        assert await store.load_image('élodie', 'a' * 32 + '.png') == b'PNGDATA'
+        upload, download = calls
+        expected = f"/storage/v1/object/nathgpt-images/{image_folder('élodie')}/{'a' * 32}.png"
+        assert upload.url.path == expected and download.url.path == expected
+        assert upload.headers['content-type'] == 'image/png'
+        assert upload.headers['apikey'] == 'sb_secret_test'
+
+    run(scenario())

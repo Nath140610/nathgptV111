@@ -97,5 +97,10 @@ grant execute on function public.nathgpt_add_usage(text, bigint, boolean) to ser
 grant execute on function public.nathgpt_purge_sessions() to service_role;
 grant select, insert, update, delete on public.nathgpt_accounts, public.nathgpt_sessions, public.nathgpt_conversations to service_role;
 
+-- Images générées : bucket Storage PRIVÉ (servi uniquement par le serveur, au propriétaire de l'image).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('nathgpt-images', 'nathgpt-images', false, 20971520, array['image/png', 'image/jpeg', 'image/webp'])
+on conflict (id) do nothing;
+
 -- Facultatif : purge quotidienne avec pg_cron (Database > Extensions > pg_cron), puis :
 -- select cron.schedule('nathgpt-purge-sessions', '0 4 * * *', 'select public.nathgpt_purge_sessions()');

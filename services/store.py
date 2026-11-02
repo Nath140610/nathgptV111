@@ -23,6 +23,13 @@ import httpx
 
 SESSION_SECONDS = 60 * 60 * 24 * 30
 SALT_ALPHABET = string.ascii_letters + string.digits
+IMAGE_BUCKET = 'nathgpt-images'
+IMAGE_TYPES = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'}
+
+
+def image_folder(account_key: str) -> str:
+    """Dossier par compte, sans caractères spéciaux (les pseudos peuvent avoir des accents)."""
+    return hashlib.sha256(account_key.encode()).hexdigest()[:24]
 
 
 def hash_password(password: str) -> str:
@@ -186,6 +193,24 @@ class SQLiteStore:
     async def delete_conversation(self, key: str, conversation_id: str) -> None:
         await self._run(self._delete, key, conversation_id)
 
+    def _image_path(self, key: str, name: str) -> Path:
+        return self.path.parent / 'images' / image_folder(key) / name
+
+    def _save_image(self, key, name, data):
+        path = self._image_path(key, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+    async def save_image(self, key: str, name: str, data: bytes, mime_type: str) -> None:
+        await self._run(self._save_image, key, name, data)
+
+    def _load_image(self, key, name):
+        path = self._image_path(key, name)
+        return path.read_bytes() if path.is_file() else None
+
+    async def load_image(self, key: str, name: str) -> bytes | None:
+        return await self._run(self._load_image, key, name)
+
 
 class SupabaseStore:
     """Production : Supabase via son API REST, avec la clé secrète du serveur."""
@@ -201,6 +226,8 @@ class SupabaseStore:
         if key.strip().startswith('eyJ'):
             headers['Authorization'] = f'Bearer {key.strip()}'
         self.client = httpx.AsyncClient(base_url=f'{url}/rest/v1', headers=headers, timeout=httpx.Timeout(10, connect=5), transport=transport)
+        storage_headers = {name: value for name, value in headers.items() if name != 'Content-Type'}
+        self.storage = httpx.AsyncClient(base_url=f'{url}/storage/v1', headers=storage_headers, timeout=httpx.Timeout(60, connect=5), transport=transport)
 
     async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
         try:
@@ -267,3 +294,22 @@ class SupabaseStore:
 
     async def delete_conversation(self, key, conversation_id) -> None:
         await self._request('DELETE', '/nathgpt_conversations', params={'id': f'eq.{conversation_id}', 'account_key': f'eq.{key}'})
+
+    async def save_image(self, key: str, name: str, data: bytes, mime_type: str) -> None:
+        try:
+            response = await self.storage.post(f'/object/{IMAGE_BUCKET}/{image_folder(key)}/{name}', content=data, headers={'Content-Type': mime_type, 'x-upsert': 'true'})
+        except httpx.HTTPError as error:
+            raise StoreError('Supabase Storage injoignable') from error
+        if response.status_code >= 400:
+            raise StoreError(f'Supabase Storage HTTP {response.status_code}')
+
+    async def load_image(self, key: str, name: str) -> bytes | None:
+        try:
+            response = await self.storage.get(f'/object/{IMAGE_BUCKET}/{image_folder(key)}/{name}')
+        except httpx.HTTPError as error:
+            raise StoreError('Supabase Storage injoignable') from error
+        if response.status_code in (400, 404):
+            return None
+        if response.status_code >= 400:
+            raise StoreError(f'Supabase Storage HTTP {response.status_code}')
+        return response.content

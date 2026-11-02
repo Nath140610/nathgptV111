@@ -29,7 +29,8 @@ class UpstreamStatusError(Exception):
 class SSEParser:
     """Parse des octets SSE, y compris les lignes UTF-8 coupées entre paquets."""
 
-    MAX_FRAME = 1_000_000
+    # Une image PNG arrive entière dans un seul événement (base64) : plusieurs Mo.
+    MAX_FRAME = 40_000_000
 
     def __init__(self) -> None:
         self._decoder = codecs.getincrementaldecoder("utf-8")("replace")
@@ -136,8 +137,18 @@ def _usage_data(payload) -> dict:
     return {}
 
 
+def _image_data(payload) -> dict | None:
+    """Image de l'API (champ base64, ou b64_json pour les anciennes versions)."""
+    if not isinstance(payload, dict):
+        return None
+    encoded = payload.get("base64") or payload.get("b64_json")
+    if not isinstance(encoded, str) or not encoded:
+        return None
+    return {"base64": encoded, "mime_type": str(payload.get("mime_type") or "image/png"), "filename": str(payload.get("filename") or "image.png")}
+
+
 def normalize_event(event: SSEEvent) -> tuple[str, dict] | None:
-    """Convertit les variantes SSE usuelles en delta/replace/done/error."""
+    """Convertit les variantes SSE usuelles en delta/replace/image/done/error."""
     payload = _parse_data(event.data)
     kind = event.event.lower().strip()
     if payload == "[DONE]":
@@ -152,6 +163,9 @@ def normalize_event(event: SSEEvent) -> tuple[str, dict] | None:
         if text is None:
             return None
         return kind, {"text": text}
+    if kind == "image":
+        image = _image_data(payload)
+        return ("image", image) if image else None
     if kind == "done":
         return "done", _usage_data(payload)
     if kind == "error":
@@ -175,7 +189,7 @@ class NathGPTClient:
         self.token = token.strip()
         self.transport = transport
 
-    async def open_stream(self, prompt: str, conversation_id: str) -> tuple[httpx.AsyncClient, httpx.Response]:
+    async def open_stream(self, prompt: str, conversation_id: str, *, image: bool = False) -> tuple[httpx.AsyncClient, httpx.Response]:
         timeout = httpx.Timeout(connect=5, read=120, write=10, pool=5)
         client = httpx.AsyncClient(timeout=timeout, transport=self.transport, follow_redirects=False, trust_env=False)
         request = client.build_request(
@@ -186,7 +200,7 @@ class NathGPTClient:
                 "Content-Type": "application/json",
                 "Cache-Control": "no-cache",
             },
-            json={"prompt": prompt, "conversation_id": conversation_id, "stream": True},
+            json={"prompt": prompt, "conversation_id": conversation_id, "stream": True, **({"response_type": "image"} if image else {})},
         )
         try:
             response = await client.send(request, stream=True)
@@ -207,7 +221,7 @@ class NathGPTClient:
     async def events(response: httpx.Response):
         if "application/json" in response.headers.get("content-type", ""):
             raw = await response.aread()
-            if len(raw) > 1_000_000:
+            if len(raw) > SSEParser.MAX_FRAME:
                 raise SSEProtocolError("JSON response too large")
             try:
                 payload = json.loads(raw)
@@ -216,6 +230,10 @@ class NathGPTClient:
             answer = payload.get("answer") if isinstance(payload, dict) else None
             if not isinstance(answer, str):
                 raise SSEProtocolError("Missing answer in JSON response")
+            for item in payload.get("images") or []:
+                image = _image_data(item)
+                if image:
+                    yield "image", image
             yield "replace", {"text": answer}
             yield "done", _usage_data(payload)
             return

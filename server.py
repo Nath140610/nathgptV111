@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import json
+import logging
 import os
 import re
 import time
+import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,10 +18,10 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from services.nathgpt_client import NathGPTClient, SSEProtocolError, UpstreamStatusError
-from services.store import SQLiteStore, StoreError, SupabaseStore, hash_password, verify_password
+from services.store import IMAGE_TYPES, SQLiteStore, StoreError, SupabaseStore, hash_password, verify_password
 
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -28,12 +32,15 @@ MAX_CONVERSATION_BYTES = 1_000_000
 MAX_PROMPT_CHARS = 12_000
 MAX_MESSAGES = 500
 CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
+MAX_IMAGE_BYTES = 20 * 1024 * 1024
+LOG = logging.getLogger("nathgpt.site")
 STATIC_FILES = {
     "": "index.html", "index.html": "index.html", "styles.css": "styles.css",
     "app.js": "app.js", "logo.png": "logo.png", "orbs.bundle.js": "orbs.bundle.js",
     "voice.bundle.js": "voice.bundle.js", "ring.bundle.js": "ring.bundle.js",
     "markdown.bundle.js": "markdown.bundle.js", "island.js": "island.js",
-    "manifest.webmanifest": "manifest.webmanifest",
+    "manifest.webmanifest": "manifest.webmanifest", "sw.js": "sw.js",
 }
 
 
@@ -139,6 +146,23 @@ def encode_sse(event: str, payload: dict) -> bytes:
 def estimate_tokens(text: str) -> int:
     size = len(text.encode("utf-8"))
     return max(1, -(-size // 4)) if size else 0
+
+
+def decode_image(data: dict) -> tuple[bytes, str] | None:
+    """Octets d'une image de l'API, vérifiés par leur signature (PNG, JPEG, WebP)."""
+    try:
+        raw = base64.b64decode(data.get("base64", ""), validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if not raw or len(raw) > MAX_IMAGE_BYTES:
+        return None
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return raw, "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return raw, "image/jpeg"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return raw, "image/webp"
+    return None
 
 
 def upstream_error(status: int) -> HTTPException:
@@ -285,6 +309,18 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             await store.delete_conversation(account["key"], conversation_id)
         return {"ok": True}
 
+    @app.get("/api/images/{name}")
+    async def image(name: str, request: Request):
+        account = await current_account(request)
+        match = IMAGE_NAME_RE.fullmatch(name)
+        if not match:
+            raise HTTPException(404)
+        data = await store.load_image(account["key"], name)
+        if data is None:
+            raise HTTPException(404)
+        media_type = {v: k for k, v in IMAGE_TYPES.items()}[match.group(1)]
+        return Response(data, media_type=media_type, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+
     @app.post("/api/chat")
     async def chat(request: Request):
         check_origin(request)
@@ -308,7 +344,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(503, detail="NathGPT API n'est pas configurée sur ce serveur.")
         await gate.acquire(sid, client_ip(request))
         try:
-            http_client, upstream = await client.open_stream(prompt, conversation_id)
+            http_client, upstream = await client.open_stream(prompt, conversation_id, image=payload.get("mode") == "Image")
         except UpstreamStatusError as error:
             await gate.release(sid)
             raise upstream_error(error.status_code) from None
@@ -334,6 +370,20 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                 return done
             return {**done, "account_tokens_used": total, "usage_estimated": account["usage_estimated"] or not isinstance(exact, int)}
 
+        async def store_image(data: dict) -> dict | None:
+            """Enregistre l'image (Supabase Storage / disque) et renvoie un lien court au navigateur."""
+            decoded = decode_image(data)
+            if not decoded:
+                return None
+            raw, mime_type = decoded
+            name = f"{uuid.uuid4().hex}.{IMAGE_TYPES[mime_type]}"
+            try:
+                await store.save_image(account["key"], name, raw, mime_type)
+            except StoreError:
+                LOG.exception("Image non enregistrée")
+                return None
+            return {"url": f"/api/images/{name}", "mime_type": mime_type, "filename": data.get("filename") or name}
+
         async def event_stream():
             terminal = False
             disconnected = False
@@ -348,6 +398,12 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                             answer += data.get("text", "")
                         elif kind == "replace":
                             answer = data.get("text", "")
+                        elif kind == "image":
+                            data = await store_image(data)
+                            if data is None:
+                                yield encode_sse("error", {"code": "image_error", "message": "L’image a été générée mais n’a pas pu être enregistrée."})
+                                terminal = True
+                                break
                         elif kind == "done" and answer.strip():
                             data = await record_usage(answer, data)
                         yield encode_sse(kind, data)

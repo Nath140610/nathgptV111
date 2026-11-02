@@ -277,7 +277,55 @@
     dirtyChats.clear();
     showApp();
     syncConversations();
+    setTimeout(askForNotifications, 4200);
   }
+
+  // Notifications : prévenir quand une réponse ou une image est prête et que l'app est en arrière-plan.
+  const NOTIF_SNOOZE_KEY = 'nathgpt.notifications.snooze';
+  const isAppleDevice = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  function snoozeNotifications(days) { localStorage.setItem(NOTIF_SNOOZE_KEY, String(Date.now() + days * 86400000)); }
+  function askForNotifications() {
+    if (!account || !('Notification' in window) || Notification.permission === 'granted') return;
+    if (Date.now() < Number(localStorage.getItem(NOTIF_SNOOZE_KEY) || 0)) return;
+    if (Notification.permission === 'denied') {
+      island?.flash({
+        size: 'expanded', leading: 'bell', tone: 'error', title: 'Notifications bloquées',
+        text: isAppleDevice ? 'Active-les dans Réglages › Notifications › NathGPT.' : 'Autorise-les dans les réglages du site (icône à gauche de l’adresse).',
+        actions: [{ label: 'Compris', onSelect: () => { snoozeNotifications(1); island?.dismiss(); } }],
+      }, 12000);
+      return;
+    }
+    island?.flash({
+      size: 'expanded', leading: 'bell', title: 'Activer les notifications ?',
+      text: 'NathGPT te prévient quand une réponse ou une image est prête.',
+      actions: [
+        { label: 'Plus tard', onSelect: () => { snoozeNotifications(3); island?.dismiss(); } },
+        { label: 'Activer', tone: 'primary', onSelect: () => {
+          // Appel direct dans le toucher : obligatoire pour que le navigateur affiche sa demande.
+          const request = Notification.requestPermission();
+          island?.dismiss();
+          Promise.resolve(request).then((result) => {
+            if (result === 'granted') island?.flash({ leading: 'check', label: 'Notifications activées' }, 1800);
+            else { snoozeNotifications(1); askForNotifications(); }
+          });
+        } },
+      ],
+    }, 15000);
+  }
+  async function notifyIfHidden(title, body, chatId) {
+    if (document.visibilityState !== 'hidden' || !('Notification' in window) || Notification.permission !== 'granted') return;
+    const options = { body: body || 'Touchez pour ouvrir NathGPT.', icon: '/logo.png', badge: '/logo.png', tag: chatId, data: { chatId } };
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration();
+      if (registration) await registration.showNotification(title, options);
+      else new Notification(title, options);
+    } catch { /* notifications indisponibles sur cet appareil */ }
+  }
+  navigator.serviceWorker?.register('/sw.js').catch(() => {});
+  navigator.serviceWorker?.addEventListener('message', (event) => {
+    const chatId = event.data?.type === 'open-chat' ? event.data.chatId : '';
+    if (chatId && chats.some((chat) => chat.id === chatId)) { activeId = chatId; renderAll(); }
+  });
   function restartAnimation(node, className) {
     node.classList.remove(className);
     void node.offsetWidth;
@@ -402,14 +450,23 @@
         const displayContent = formattedMessage(chat, message);
         const content = displayContent ? `<div class="message-text assistant-markdown">${window.NathGPTMarkdown?.render(displayContent) || escapeHtml(displayContent)}</div>` : '';
         const error = message.error ? `<div class="message-error" role="alert">${escapeHtml(message.error)}</div>` : '';
+        const images = renderImages(message);
         const copy = message.content && !thinking ? `<button class="copy-answer" data-copy-message="${escapeHtml(message.id)}" type="button" aria-label="Copier la réponse">${icon('copy', 14)} Copier</button>` : '';
-        return `<div class="message-row assistant-message ${isImage ? 'image-processing-message' : ''}" data-message-id="${escapeHtml(message.id)}">${visual}<div class="message-body">${status}${content}${error}${copy}</div></div>`;
+        return `<div class="message-row assistant-message ${isImage ? 'image-processing-message' : ''}" data-message-id="${escapeHtml(message.id)}">${visual}<div class="message-body">${status}${content}${images}${error}${copy}</div></div>`;
       }
       return `<div class="message-row user-message"><span class="message-avatar">${escapeHtml(account.pseudo[0].toUpperCase())}</span><div class="message-body"><div class="message-author">Vous</div>${message.content ? `<div class="message-text">${escapeHtml(message.content)}</div>` : ''}${message.attachments?.length ? `<div class="message-files">${message.attachments.map((file) => `<span>${icon('file', 16)} ${escapeHtml(file.name)}</span>`).join('')}</div>` : ''}</div></div>`;
     }).join('')}`;
     window.NathGPTOrbs?.mountAll();
     window.NathGPTRings?.mountAll();
     if (nearBottom) $('messages').scrollTop = $('messages').scrollHeight;
+  }
+  function safeImages(message) {
+    return (Array.isArray(message.images) ? message.images : []).filter((image) => /^\/api\/images\/[a-f0-9]{32}\.(png|jpg|webp)$/.test(image?.url || ''));
+  }
+  function renderImages(message) {
+    const images = safeImages(message);
+    if (!images.length) return '';
+    return `<div class="message-images">${images.map((image, index) => `<figure class="generated-image"><a href="${escapeHtml(image.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(image.url)}" alt="Image générée ${index + 1}" loading="lazy"></a><a class="image-download" href="${escapeHtml(image.url)}" download="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}">${icon('arrow-up', 14)} Télécharger</a></figure>`).join('')}</div>`;
   }
   function renderAttachments() {
     $('attachments').hidden = attachments.length === 0;
@@ -519,7 +576,7 @@
     });
     let writing = false;
     try {
-      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, stream: true }), signal: controller.signal });
+      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, stream: true, mode: imageTask ? 'Image' : mode }), signal: controller.signal });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         throw new Error(serverError(response.status, payload.detail));
@@ -532,6 +589,12 @@
         try { payload = JSON.parse(event.data); } catch { continue; }
         if (event.event === 'delta') assistant.content += String(payload.text || '');
         else if (event.event === 'replace') assistant.content = String(payload.text || '');
+        else if (event.event === 'image') {
+          assistant.images = [...safeImages(assistant), { url: String(payload.url || ''), filename: String(payload.filename || '') }];
+          island?.update({ label: 'Image reçue', title: 'Image reçue', leading: 'image' });
+          if (updated.id === activeId) renderWorkspace();
+          continue;
+        }
         else if (event.event === 'error') throw new Error(serverError(502, payload.message));
         else if (event.event === 'done') {
           donePayload = payload || {};
@@ -548,16 +611,19 @@
         island?.update({ preview: visible.length > 150 ? `…${visible.slice(-150)}` : visible });
       }
       if (!completed) throw new Error('La réponse a été interrompue.');
-      if (!displayAssistantContent(assistant.content).trim()) throw new Error('NathGPT a renvoyé une réponse vide.');
+      const imageCount = safeImages(assistant).length;
+      if (!displayAssistantContent(assistant.content).trim() && !imageCount) throw new Error('NathGPT a renvoyé une réponse vide.');
       recordUsage(accountKey, content, assistant.content, donePayload);
       const seconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-      const words = displayAssistantContent(assistant.content).trim().split(/\s+/).length;
+      const words = displayAssistantContent(assistant.content).trim().split(/\s+/).filter(Boolean).length;
+      const summary = imageCount ? `${imageCount} image${imageCount > 1 ? 's' : ''} · ${seconds} s` : `${words.toLocaleString('fr-FR')} mot${words > 1 ? 's' : ''} · ${seconds} s`;
       island?.setActivity(null);
       island?.flash({
         size: 'expanded', leading: 'check', tone: 'success', haptic: true,
-        title: 'Réponse prête', text: `${words.toLocaleString('fr-FR')} mot${words > 1 ? 's' : ''} · ${seconds} s`,
+        title: imageCount ? 'Image prête' : 'Réponse prête', text: summary,
         onTap: () => { if (activeId === id) $('messages').scrollTop = $('messages').scrollHeight; },
       }, 2600);
+      notifyIfHidden(imageCount ? 'Ton image est prête' : 'Réponse de NathGPT', imageCount ? title : displayAssistantContent(assistant.content).replace(/\s+/g, ' ').slice(0, 140), id);
     } catch (error) {
       assistant.error = error.name === 'AbortError' ? 'Réponse arrêtée.' : (error.message || 'Connexion interrompue.');
       island?.setActivity(null);

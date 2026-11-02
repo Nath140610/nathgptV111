@@ -330,3 +330,13 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .ios-install.no-pointer .ios-install-pointer{display:none}
 @keyframes ios-point{50%{transform:translateY(8px)}}
 @keyframes ios-point-up{50%{transform:translateY(-8px)}}
+
+/* ===== Images générées dans la conversation ===== */
+.message-images{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr));gap:12px;margin-top:10px;max-width:560px}
+.generated-image{position:relative;margin:0;overflow:hidden;border:1px solid #ffffff14;border-radius:18px;background:#111318;box-shadow:0 14px 40px #0006;animation:auth-rise .5s cubic-bezier(.2,.9,.25,1.05) both}
+.generated-image img{display:block;width:100%;height:auto;aspect-ratio:auto}
+.image-download{position:absolute;right:10px;bottom:10px;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;background:#000000b3;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:12px;font-weight:600;text-decoration:none}
+.image-download svg{transform:rotate(180deg)}
+.image-download:hover{background:#000d}
+.di-bell{color:#ffd60a;animation:di-ring 1.2s ease-in-out 2}
+@keyframes di-ring{15%,45%{rotate:14deg}30%,60%{rotate:-14deg}75%{rotate:0deg}}
