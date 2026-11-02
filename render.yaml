@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: nathgpt
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --config gunicorn.conf.py server:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      # URL HTTPS de l'API NathGPT (Selenium) et son jeton Bearer.
+      - key: NATHGPT_API_URL
+        sync: false
+      - key: NATHGPT_API_TOKEN
+        sync: false
+      # Supabase : Project Settings > API (URL du projet + clé secrète / service_role).
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false

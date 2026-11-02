@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+TOKEN_API_LOCAL.txt
+data/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+node_modules/
+dist/
+
+# Données personnelles exportées de l’ancien site : ne jamais committer.
+*.local.sql
+IMAGES_NATHGPT/
