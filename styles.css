@@ -116,61 +116,6 @@
 .usage-info p{margin:0 0 10px;color:#c7c8d0;font-size:12px;line-height:1.5}
 .usage-info small{display:block;color:#90939f;font-size:10px;line-height:1.45}
 @media(max-width:480px){.composer-zone{position:relative;padding-bottom:43px}.composer-hint,.composer-caption{display:none}.usage-wrap{position:absolute;right:0;bottom:7px}.usage-cost{height:27px;padding:0 10px;font-size:10px}}
-/* ===== Dynamic Island (island.js) ===== */
-.di-safe-probe{position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none}
-.dynamic-island{position:fixed;z-index:120;top:10px;left:50%;width:125px;height:37px;transform:translateX(-50%);transform-origin:50% 0;background:#000;border-radius:999px;overflow:hidden;color:#f5f5f7;box-shadow:0 12px 36px #000a,0 0 0 .5px #ffffff14;-webkit-user-select:none;user-select:none;isolation:isolate;contain:layout paint;transition:width var(--di-duration,.56s) var(--di-ease,ease),height var(--di-duration,.56s) var(--di-ease,ease),border-radius var(--di-duration,.56s) var(--di-ease,ease),top .3s ease,transform .38s cubic-bezier(.2,.9,.3,1.25),opacity .25s ease,box-shadow .3s ease}
-.dynamic-island.is-interactive{cursor:pointer}
-.dynamic-island.is-hidden{opacity:0;transform:translateX(-50%) scale(.55);pointer-events:none}
-.dynamic-island[data-mode="hardware"][data-active="idle"]{box-shadow:none}
-.di-layer{position:absolute;top:0;left:50%;transform:translateX(-50%);transition:opacity .28s ease .07s,filter .32s ease .07s,transform .42s cubic-bezier(.2,.9,.3,1.15) .05s}
-.di-layer.di-enter{opacity:0;filter:blur(6px);transform:translateX(-50%) scale(.92)}
-.di-layer.di-leave{opacity:0;filter:blur(6px);transform:translateX(-50%) scale(.88);transition-duration:.16s;transition-delay:0s}
-.di-compact{height:40px;display:flex;align-items:center;gap:9px;padding:0 15px 0 10px;white-space:nowrap;font-size:13px;font-weight:600;letter-spacing:-.01em}
-.di-label{max-width:calc(100vw - 150px);overflow:hidden;text-overflow:ellipsis}
-.di-trailing{margin-left:auto;padding-left:6px;display:flex;align-items:center;color:#a1a1aa;font-size:12px;font-variant-numeric:tabular-nums}
-.dynamic-island[data-mode="hardware"] .di-compact{height:37px;justify-content:space-between;padding:0 13px}
-.dynamic-island[data-mode="hardware"] .di-compact .di-label{display:none}
-.di-expanded{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:13px;align-items:center;padding:16px 18px 16px 16px;min-height:74px}
-.dynamic-island[data-mode="hardware"] .di-expanded{align-items:start;padding-top:12px}
-.dynamic-island[data-mode="hardware"] .di-x-main{padding-top:calc(var(--di-cutout-h) - 2px)}
-.di-x-main strong{display:block;font-size:15px;font-weight:650;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.di-x-main p{margin:3px 0 0;color:#a1a1aa;font-size:12.5px;line-height:1.35;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-.di-x-main .di-preview{margin-top:8px;color:#d4d4d8;-webkit-line-clamp:3;min-height:4.05em}
-.di-x-trail{align-self:start;padding-top:4px;color:#a1a1aa;font-size:12px;font-variant-numeric:tabular-nums}
-.di-actions{grid-column:1/-1;display:flex;gap:8px;margin-top:13px}
-.di-actions button{flex:1;height:40px;border:0;border-radius:20px;background:#ffffff1c;color:#fff;font-size:13px;font-weight:650;touch-action:manipulation;transition:background .2s,transform .15s}
-.di-actions button:active{transform:scale(.96)}
-.di-actions .di-danger{background:#ff453a2e;color:#ff6961}
-.di-actions .di-primary{background:#30d158;color:#04140a}
-.di-glyph{flex:none;display:grid;place-items:center;width:20px;height:20px}
-.di-expanded .di-glyph{width:40px;height:40px}
-.di-orb{border-radius:50%;background:radial-gradient(circle at 35% 30%,#fff9 0,transparent 32%),conic-gradient(from 0deg,#7dd3fc,#a78bfa,#f0abfc,#7dd3fc);box-shadow:0 0 14px #a78bfa99;animation:di-spin 2.4s linear infinite,di-breathe 1.7s ease-in-out infinite}
-.di-image-glyph{border-radius:6px;background:linear-gradient(120deg,#f472b6,#a78bfa,#38bdf8,#f472b6);background-size:300% 100%;box-shadow:0 0 14px #a78bfa77;animation:di-shimmer 2s linear infinite}
-.di-expanded .di-image-glyph{border-radius:12px}
-.di-wave{display:flex;align-items:center;justify-content:center;gap:2px;width:24px}
-.di-wave i{width:3px;height:30%;border-radius:2px;background:linear-gradient(#7dd3fc,#a78bfa);animation:di-wave .9s ease-in-out infinite}
-.di-wave i:nth-child(2){animation-delay:-.7s}.di-wave i:nth-child(3){animation-delay:-.45s}.di-wave i:nth-child(4){animation-delay:-.2s}.di-wave i:nth-child(5){animation-delay:-.55s}
-.di-tone-live .di-wave i{background:linear-gradient(#86efac,#30d158)}
-.di-check svg{width:100%;height:100%;animation:di-pop .45s cubic-bezier(.3,1.6,.5,1)}
-.di-check circle{fill:#30d158}
-.di-check path{fill:none;stroke:#04140a;stroke-width:2.6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:16;stroke-dashoffset:16;animation:di-draw .4s .18s ease forwards}
-.di-alert{border-radius:50%;background:#ff453a;color:#fff;font-weight:800;font-size:13px;animation:di-pop .45s cubic-bezier(.3,1.6,.5,1),di-shake .45s .35s}
-.di-expanded .di-alert{font-size:22px}
-.di-logo img{width:100%;height:100%;border-radius:30%;object-fit:cover;animation:di-pop .5s cubic-bezier(.3,1.6,.5,1)}
-.di-icon svg{width:100%;height:100%}
-.di-mic{color:#30d158;animation:di-breathe 1.6s ease-in-out infinite}
-.di-offline{color:#ff6961}
-.di-sparkles{color:#c4b5fd}
-.di-stop i{width:58%;height:58%;border-radius:3px;background:#ff6961}
-.di-expanded .di-check svg,.di-expanded .di-logo img{filter:drop-shadow(0 0 10px #30d15855)}
-@keyframes di-spin{to{rotate:1turn}}
-@keyframes di-breathe{50%{scale:.84}}
-@keyframes di-shimmer{to{background-position:300% 0}}
-@keyframes di-wave{50%{height:100%}}
-@keyframes di-pop{from{scale:.3;opacity:0}}
-@keyframes di-draw{to{stroke-dashoffset:0}}
-@keyframes di-shake{25%,75%{translate:-3px 0}50%{translate:3px 0}}
-
 /* ===== Téléphones, iPhone et zones sûres ===== */
 html{background:#08090b;-webkit-text-size-adjust:100%;text-size-adjust:100%}
 body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
@@ -292,9 +237,7 @@ button{touch-action:manipulation}
 .auth-perks svg{color:#b6a7ff}
 @media(max-width:480px){.auth-header{height:64px;padding:0 22px;font-size:18px}.auth-header img{width:30px;height:30px}.auth-content{padding:4px 14px 20px;align-items:flex-start}.auth-card{padding:26px 20px 22px;border-radius:26px}.auth-card h2{font-size:25px}.auth-subtitle{margin-bottom:22px}.auth-tabs button{height:40px}.strength-bars i{width:24px}.auth-perks li{font-size:10.5px}}
 @media(orientation:landscape) and (max-height:500px){.auth-header{height:56px}.auth-content{padding-top:0}.auth-logo{display:none}}
-/* Sous l'île flottante, le titre s'efface ; bouton natif « œil » de Edge masqué (on a le nôtre). */
-.topbar-title{transition:opacity .25s ease}
-@media(max-width:700px){.island-visible .topbar-title{opacity:0}}
+/* Bouton natif « œil » de Edge masqué (on a le nôtre). */
 input::-ms-reveal,input::-ms-clear{display:none}
 
 /* ===== Haut de page net : plus de halo flou sous la barre d'état ===== */
@@ -338,5 +281,12 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .image-download{position:absolute;right:10px;bottom:10px;display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border-radius:999px;background:#000000b3;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);color:#fff;font-size:12px;font-weight:600;text-decoration:none}
 .image-download svg{transform:rotate(180deg)}
 .image-download:hover{background:#000d}
-.di-bell{color:#ffd60a;animation:di-ring 1.2s ease-in-out 2}
-@keyframes di-ring{15%,45%{rotate:14deg}30%,60%{rotate:-14deg}75%{rotate:0deg}}
+
+/* ===== Demande d'activation des notifications ===== */
+.notif-banner{position:fixed;z-index:150;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));width:min(380px,calc(100vw - 24px));transform:translateX(-50%);padding:15px 16px 14px;border:1px solid #ffffff1a;border-radius:20px;background:#1b1c22;color:#f2f2f5;box-shadow:0 18px 48px #000a;animation:notif-in .4s cubic-bezier(.2,.9,.25,1.05) both}
+@keyframes notif-in{from{opacity:0;transform:translate(-50%,22px)}}
+.notif-banner strong{display:block;font-size:15px}
+.notif-banner p{margin:4px 0 12px;color:#b4b6c2;font-size:13px;line-height:1.45}
+.notif-actions{display:flex;gap:8px}
+.notif-actions button{flex:1;height:40px;border:0;border-radius:12px;background:#ffffff14;color:#fff;font-size:14px;font-weight:600}
+.notif-actions .is-primary{background:#f2f2f5;color:#0b0c10}

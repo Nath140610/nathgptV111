@@ -31,7 +31,6 @@
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || ''}</svg>`;
   }
   document.querySelectorAll('[data-icon]').forEach((node) => { node.innerHTML = icon(node.dataset.icon, Number(node.dataset.size) || 18); });
-  const island = window.NathGPTIsland;
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   // iOS ne réduit pas 100dvh quand le clavier s'ouvre : l'interface suit le viewport visible.
@@ -284,33 +283,40 @@
   const NOTIF_SNOOZE_KEY = 'nathgpt.notifications.snooze';
   const isAppleDevice = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   function snoozeNotifications(days) { localStorage.setItem(NOTIF_SNOOZE_KEY, String(Date.now() + days * 86400000)); }
+  function notificationBanner(title, text, actions) {
+    document.querySelector('.notif-banner')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'notif-banner';
+    banner.setAttribute('role', 'dialog');
+    banner.innerHTML = `<strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p><div class="notif-actions"></div>`;
+    for (const action of actions) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = action.label;
+      if (action.primary) button.className = 'is-primary';
+      button.addEventListener('click', () => { banner.remove(); action.onSelect(); });
+      banner.querySelector('.notif-actions').append(button);
+    }
+    document.body.append(banner);
+  }
   function askForNotifications() {
     if (!account || !('Notification' in window) || Notification.permission === 'granted') return;
     if (Date.now() < Number(localStorage.getItem(NOTIF_SNOOZE_KEY) || 0)) return;
     if (Notification.permission === 'denied') {
-      island?.flash({
-        size: 'expanded', leading: 'bell', tone: 'error', title: 'Notifications bloquées',
-        text: isAppleDevice ? 'Active-les dans Réglages › Notifications › NathGPT.' : 'Autorise-les dans les réglages du site (icône à gauche de l’adresse).',
-        actions: [{ label: 'Compris', onSelect: () => { snoozeNotifications(1); island?.dismiss(); } }],
-      }, 12000);
+      notificationBanner('Notifications bloquées',
+        isAppleDevice ? 'Active-les dans Réglages › Notifications › NathGPT.' : 'Autorise-les dans les réglages du site (icône à gauche de l’adresse).',
+        [{ label: 'Compris', primary: true, onSelect: () => snoozeNotifications(1) }]);
       return;
     }
-    island?.flash({
-      size: 'expanded', leading: 'bell', title: 'Activer les notifications ?',
-      text: 'NathGPT te prévient quand une réponse ou une image est prête.',
-      actions: [
-        { label: 'Plus tard', onSelect: () => { snoozeNotifications(3); island?.dismiss(); } },
-        { label: 'Activer', tone: 'primary', onSelect: () => {
-          // Appel direct dans le toucher : obligatoire pour que le navigateur affiche sa demande.
-          const request = Notification.requestPermission();
-          island?.dismiss();
-          Promise.resolve(request).then((result) => {
-            if (result === 'granted') island?.flash({ leading: 'check', label: 'Notifications activées' }, 1800);
-            else { snoozeNotifications(1); askForNotifications(); }
-          });
-        } },
-      ],
-    }, 15000);
+    notificationBanner('Activer les notifications ?', 'NathGPT te prévient quand une réponse ou une image est prête.', [
+      { label: 'Plus tard', onSelect: () => snoozeNotifications(3) },
+      { label: 'Activer', primary: true, onSelect: () => {
+        // Appel direct dans le toucher : obligatoire pour que le navigateur affiche sa demande.
+        Promise.resolve(Notification.requestPermission()).then((result) => {
+          if (result !== 'granted') { snoozeNotifications(1); askForNotifications(); }
+        });
+      } },
+    ]);
   }
   async function notifyIfHidden(title, body, chatId) {
     if (document.visibilityState !== 'hidden' || !('Notification' in window) || Notification.permission !== 'granted') return;
@@ -401,7 +407,6 @@
       submit.classList.remove('is-loading');
       submit.classList.add('is-success');
       label.textContent = signup ? 'Compte créé' : 'Connecté';
-      island?.flash({ size: 'expanded', leading: 'logo', tone: 'success', title: `Bonjour, ${data.account.pseudo}`, text: signup ? 'Votre compte est prêt. Bienvenue sur NathGPT !' : 'Content de vous revoir.', haptic: true }, 3200);
       await wait(520);
       $('auth-card').classList.add('is-leaving');
       await wait(280);
@@ -567,14 +572,6 @@
     const controller = new AbortController();
     pendingRequest = controller;
     updateSendButton();
-    const startedAt = Date.now();
-    island?.setActivity({
-      id: 'reply', leading: imageTask ? 'image' : 'orb', startedAt,
-      label: imageTask ? 'Création de l’image…' : 'NathGPT réfléchit…',
-      title: imageTask ? 'Création de l’image' : 'NathGPT réfléchit', text: title, preview: '',
-      actions: [{ label: 'Arrêter', tone: 'danger', onSelect: () => controller.abort() }],
-    });
-    let writing = false;
     try {
       const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, stream: true, mode: imageTask ? 'Image' : mode }), signal: controller.signal });
       if (!response.ok) {
@@ -591,7 +588,6 @@
         else if (event.event === 'replace') assistant.content = String(payload.text || '');
         else if (event.event === 'image') {
           assistant.images = [...safeImages(assistant), { url: String(payload.url || ''), filename: String(payload.filename || '') }];
-          island?.update({ label: 'Image reçue', title: 'Image reçue', leading: 'image' });
           if (updated.id === activeId) renderWorkspace();
           continue;
         }
@@ -603,32 +599,14 @@
         }
         else continue;
         updateAssistant(updated, assistant);
-        const visible = displayAssistantContent(assistant.content).replace(/[#*_`>|~-]+/g, ' ').replace(/\s+/g, ' ').trim();
-        if (visible && !writing) {
-          writing = true;
-          island?.update({ label: 'NathGPT écrit…', title: 'NathGPT écrit', trailingGlyph: 'wave' });
-        }
-        island?.update({ preview: visible.length > 150 ? `…${visible.slice(-150)}` : visible });
       }
       if (!completed) throw new Error('La réponse a été interrompue.');
       const imageCount = safeImages(assistant).length;
       if (!displayAssistantContent(assistant.content).trim() && !imageCount) throw new Error('NathGPT a renvoyé une réponse vide.');
       recordUsage(accountKey, content, assistant.content, donePayload);
-      const seconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
-      const words = displayAssistantContent(assistant.content).trim().split(/\s+/).filter(Boolean).length;
-      const summary = imageCount ? `${imageCount} image${imageCount > 1 ? 's' : ''} · ${seconds} s` : `${words.toLocaleString('fr-FR')} mot${words > 1 ? 's' : ''} · ${seconds} s`;
-      island?.setActivity(null);
-      island?.flash({
-        size: 'expanded', leading: 'check', tone: 'success', haptic: true,
-        title: imageCount ? 'Image prête' : 'Réponse prête', text: summary,
-        onTap: () => { if (activeId === id) $('messages').scrollTop = $('messages').scrollHeight; },
-      }, 2600);
       notifyIfHidden(imageCount ? 'Ton image est prête' : 'Réponse de NathGPT', imageCount ? title : displayAssistantContent(assistant.content).replace(/\s+/g, ' ').slice(0, 140), id);
     } catch (error) {
       assistant.error = error.name === 'AbortError' ? 'Réponse arrêtée.' : (error.message || 'Connexion interrompue.');
-      island?.setActivity(null);
-      if (error.name === 'AbortError') island?.flash({ leading: 'stop', label: 'Réponse arrêtée' }, 1600);
-      else island?.flash({ size: 'expanded', leading: 'error', tone: 'error', haptic: 'error', title: 'Réponse impossible', text: assistant.error }, 4200);
     } finally {
       assistant.state = 'done';
       pendingRequest = null;
@@ -662,7 +640,6 @@
     voiceActive = false;
     voiceShouldSend = false;
     recognition = null;
-    island?.setActivity(null);
     window.NathGPTVoice?.stop();
     window.NathGPTRings?.setCallState('idle');
     $('voice-panel').classList.remove('is-listening');
@@ -713,11 +690,6 @@
     voiceActive = true;
     voiceShouldSend = true;
     voiceFailure = false;
-    island?.setActivity({
-      id: 'voice', leading: 'mic', trailingGlyph: 'wave', tone: 'live', label: 'Écoute…',
-      title: 'NathGPT vous écoute', text: 'Parlez, puis envoyez.',
-      actions: [{ label: 'Annuler', onSelect: cancelVoice }, { label: 'Envoyer', tone: 'primary', onSelect: () => $('voice-finish').click() }],
-    });
     $('voice-panel').classList.add('is-listening');
     window.NathGPTRings?.setCallState('listening');
     voiceTranscript = '';
@@ -788,7 +760,7 @@
     const chat = chats.find((item) => item.id === activeId);
     const message = chat?.messages.find((item) => item.id === button.dataset.copyMessage);
     if (!message?.content) return;
-    try { await navigator.clipboard.writeText(formattedMessage(chat, message)); button.textContent = 'Copié'; island?.flash({ leading: 'check', label: 'Réponse copiée' }, 1500); setTimeout(() => { button.innerHTML = `${icon('copy', 14)} Copier`; }, 1600); }
+    try { await navigator.clipboard.writeText(formattedMessage(chat, message)); button.textContent = 'Copié'; setTimeout(() => { button.innerHTML = `${icon('copy', 14)} Copier`; }, 1600); }
     catch { button.textContent = 'Copie indisponible'; }
   });
   voiceTrigger.addEventListener('click', startVoice);
@@ -811,7 +783,6 @@
   }
   function setMode(next) {
     if (!['Agent', 'Chat', 'Image'].includes(next)) return;
-    if (next !== mode) island?.flash({ leading: next === 'Image' ? 'image' : 'sparkles', label: `Mode ${next}` }, 1400);
     mode = next;
     $('mode-label').textContent = next;
     hideModeWarning();
@@ -830,12 +801,8 @@
     if (dirtyChats.size) flushChats();
     api('/api/session/logout', { method: 'POST' }).catch(() => {});
     account = null; chats = []; activeId = null; dirtyChats.clear(); closeMenu(); showAuth();
-    island?.setActivity(null);
-    island?.flash({ leading: 'user', label: 'Déconnecté' }, 1500);
   });
   window.addEventListener('beforeunload', () => pendingRequest?.abort());
-  window.addEventListener('offline', () => island?.flash({ size: 'expanded', leading: 'offline', tone: 'error', haptic: 'error', title: 'Hors connexion', text: 'Vérifiez votre réseau.' }, 3600));
-  window.addEventListener('online', () => island?.flash({ leading: 'check', label: 'De retour en ligne' }, 1800));
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && account) { event.preventDefault(); newChat(); }
     if (event.key === 'Escape') {
@@ -876,7 +843,6 @@
     api('/api/auth/me')
       .then((data) => {
         startSession(data.account);
-        island?.flash({ leading: 'logo', label: `Bonjour, ${data.account.pseudo}` }, 2200);
       })
       .catch(() => showAuth());
   }

@@ -39,7 +39,7 @@ STATIC_FILES = {
     "": "index.html", "index.html": "index.html", "styles.css": "styles.css",
     "app.js": "app.js", "logo.png": "logo.png", "orbs.bundle.js": "orbs.bundle.js",
     "voice.bundle.js": "voice.bundle.js", "ring.bundle.js": "ring.bundle.js",
-    "markdown.bundle.js": "markdown.bundle.js", "island.js": "island.js",
+    "markdown.bundle.js": "markdown.bundle.js",
     "manifest.webmanifest": "manifest.webmanifest", "sw.js": "sw.js",
 }
 
