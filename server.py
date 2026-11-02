@@ -11,7 +11,7 @@ import os
 import re
 import time
 import uuid
-from collections import defaultdict, deque
+from collections import OrderedDict, defaultdict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +36,7 @@ CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 PURGE_INTERVAL_SECONDS = 60 * 60
+MEMORY_IMAGES_BYTES = 150 * 1024 * 1024
 LOG = logging.getLogger("nathgpt.site")
 STATIC_FILES = {
     "": "index.html", "index.html": "index.html", "styles.css": "styles.css",
@@ -229,6 +230,13 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
 
     app = FastAPI(title="NathGPT", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store = store
+    # Secours si Supabase Storage refuse l'image : gardée en mémoire (perdue au redémarrage du serveur).
+    memory_images: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+
+    def remember_image(key: str, name: str, data: bytes) -> None:
+        memory_images[(key, name)] = data
+        while sum(len(value) for value in memory_images.values()) > MEMORY_IMAGES_BYTES and len(memory_images) > 1:
+            memory_images.popitem(last=False)
     app.state.gate = gate
 
     @app.exception_handler(StoreError)
@@ -324,10 +332,15 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     async def admin_status(request: Request):
         await admin_account(request)
         try:
+            storage = await store.image_storage_status()
+        except StoreError as error:
+            storage = str(error)
+        site = {"active_generations": gate.global_active, "image_storage": storage}
+        try:
             vm = (await admin_upstream("GET", "/admin/status")).json()
         except HTTPException as error:
-            return {"ok": True, "online": False, "message": error.detail, "active_generations": gate.global_active}
-        return {"ok": True, "online": True, "vm": vm, "active_generations": gate.global_active}
+            return {"ok": True, "online": False, "message": error.detail, **site}
+        return {"ok": True, "online": True, "vm": vm, **site}
 
     @app.get("/api/admin/screenshot")
     async def admin_screenshot(request: Request):
@@ -388,7 +401,9 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         match = IMAGE_NAME_RE.fullmatch(name)
         if not match:
             raise HTTPException(404)
-        data = await store.load_image(account["key"], name)
+        data = memory_images.get((account["key"], name))
+        if data is None:
+            data = await store.load_image(account["key"], name)
         if data is None:
             raise HTTPException(404)
         media_type = {v: k for k, v in IMAGE_TYPES.items()}[match.group(1)]
@@ -452,9 +467,9 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             name = f"{uuid.uuid4().hex}.{IMAGE_TYPES[mime_type]}"
             try:
                 await store.save_image(account["key"], name, raw, mime_type)
-            except StoreError:
-                LOG.exception("Image non enregistrée")
-                return None
+            except StoreError as error:
+                LOG.error("Image non enregistrée dans le stockage (%s) : gardée en mémoire", error)
+                remember_image(account["key"], name, raw)
             return {"url": f"/api/images/{name}", "mime_type": mime_type, "filename": data.get("filename") or name}
 
         async def event_stream():

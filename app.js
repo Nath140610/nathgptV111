@@ -838,6 +838,7 @@
       ['Mémoire', memory, ''],
       ['Charge', Array.isArray(vm.load) ? vm.load.join(' · ') : '—', ''],
     ] : [['API', data.message || 'Hors ligne', 'bad']];
+    if (data.image_storage) chips.push(['Stockage images', data.image_storage === 'ok' ? 'OK' : data.image_storage, data.image_storage === 'ok' ? 'ok' : 'bad']);
     $('admin-status').innerHTML = chips.map(([label, value, tone]) => `<div class="admin-chip ${tone}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
     return Boolean(data.online);
   }

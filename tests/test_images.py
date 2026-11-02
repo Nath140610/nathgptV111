@@ -159,3 +159,50 @@ def test_purge_runs_at_startup(tmp_path):
         assert seen
 
     run(scenario())
+
+
+def test_supabase_creates_missing_bucket():
+    calls = []
+
+    def handler(request):
+        calls.append((request.method, request.url.path))
+        if request.url.path == '/storage/v1/bucket':
+            assert json.loads(request.content)['public'] is False
+            return httpx.Response(200, json={'name': 'nathgpt-images'})
+        if len(calls) == 1:  # premier envoi : le bucket n'existe pas encore
+            return httpx.Response(400, json={'statusCode': '404', 'error': 'Bucket not found', 'message': 'Bucket not found'})
+        return httpx.Response(200, json={'Key': 'ok'})
+
+    async def scenario():
+        store = SupabaseStore('https://exemple.supabase.co', 'sb_secret_test', transport=httpx.MockTransport(handler))
+        await store.save_image('alice', 'a' * 32 + '.png', b'PNG', 'image/png')
+        path = f"/storage/v1/object/nathgpt-images/{image_folder('alice')}/{'a' * 32}.png"
+        assert calls == [('POST', path), ('POST', '/storage/v1/bucket'), ('POST', path)]
+
+    run(scenario())
+
+
+def test_image_shown_even_if_storage_fails(tmp_path, monkeypatch):
+    from services.store import SQLiteStore, StoreError
+    png = big_png()
+    encoded = base64.b64encode(png).decode()
+
+    async def broken_save(self, key, name, data, mime_type):
+        raise StoreError('Supabase Storage HTTP 403 new row violates row-level security policy')
+    monkeypatch.setattr(SQLiteStore, 'save_image', broken_save)
+
+    def upstream(_request):
+        body = f'event: image\ndata: {json.dumps({"mime_type": "image/png", "base64": encoded})}\n\nevent: done\ndata: {{"type":"image"}}\n\n'.encode()
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=body)
+
+    async def scenario():
+        app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'), transport=httpx.MockTransport(upstream))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            await client.post('/api/auth/signup', json={'pseudo': 'alice', 'password': PASSWORD})
+            response = await client.post('/api/chat', json={'prompt': 'un chat', 'conversation_id': 'conversation_1', 'stream': True, 'mode': 'Image'})
+            assert 'image_error' not in response.text
+            event = json.loads(response.text.split('event: image\ndata: ', 1)[1].split('\n', 1)[0])
+            served = await client.get(event['url'])
+            assert served.status_code == 200 and served.content == png
+
+    run(scenario())

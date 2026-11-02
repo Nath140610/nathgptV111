@@ -231,6 +231,9 @@ class SQLiteStore:
     async def purge_images(self) -> int:
         return await self._run(self._purge_images)
 
+    async def image_storage_status(self) -> str:
+        return 'ok'
+
 
 class SupabaseStore:
     """Production : Supabase via son API REST, avec la clé secrète du serveur."""
@@ -324,13 +327,48 @@ class SupabaseStore:
     async def delete_conversation(self, key, conversation_id) -> None:
         await self._request('DELETE', '/nathgpt_conversations', params={'id': f'eq.{conversation_id}', 'account_key': f'eq.{key}'})
 
-    async def save_image(self, key: str, name: str, data: bytes, mime_type: str) -> None:
+    @staticmethod
+    def _storage_error(response: httpx.Response) -> StoreError:
+        # Message de Supabase (ex. « Bucket not found ») pour comprendre l'échec dans les logs.
         try:
-            response = await self.storage.post(f'/object/{IMAGE_BUCKET}/{image_folder(key)}/{name}', content=data, headers={'Content-Type': mime_type, 'x-upsert': 'true'})
+            body = response.json()
+            detail = body.get('message') or body.get('error') or ''
+        except ValueError:
+            detail = response.text
+        return StoreError(f'Supabase Storage HTTP {response.status_code} {str(detail)[:200]}'.strip())
+
+    async def _storage_request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        try:
+            return await self.storage.request(method, path, **kwargs)
         except httpx.HTTPError as error:
             raise StoreError('Supabase Storage injoignable') from error
+
+    async def ensure_image_bucket(self) -> None:
+        """Crée le bucket privé des images s'il manque (schema.sql pas relancé)."""
+        response = await self._storage_request('POST', '/bucket', json={
+            'id': IMAGE_BUCKET, 'name': IMAGE_BUCKET, 'public': False,
+            'file_size_limit': 20 * 1024 * 1024, 'allowed_mime_types': list(IMAGE_TYPES),
+        })
+        if response.status_code >= 400 and 'already exists' not in response.text.lower():
+            raise self._storage_error(response)
+
+    async def save_image(self, key: str, name: str, data: bytes, mime_type: str) -> None:
+        path = f'/object/{IMAGE_BUCKET}/{image_folder(key)}/{name}'
+        headers = {'Content-Type': mime_type, 'x-upsert': 'true'}
+        response = await self._storage_request('POST', path, content=data, headers=headers)
+        if response.status_code >= 400 and 'bucket not found' in response.text.lower():
+            await self.ensure_image_bucket()
+            response = await self._storage_request('POST', path, content=data, headers=headers)
         if response.status_code >= 400:
-            raise StoreError(f'Supabase Storage HTTP {response.status_code}')
+            raise self._storage_error(response)
+
+    async def image_storage_status(self) -> str:
+        response = await self._storage_request('GET', f'/bucket/{IMAGE_BUCKET}')
+        if response.status_code == 200:
+            return 'ok'
+        if 'not found' in response.text.lower():
+            return 'bucket nathgpt-images absent (il sera créé à la prochaine image)'
+        return str(self._storage_error(response))
 
     async def load_image(self, key: str, name: str) -> bytes | None:
         try:
