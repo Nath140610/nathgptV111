@@ -101,9 +101,10 @@
       const standalone = navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
       if (portrait && safeTop) this.portraitSafeTop = safeTop;
       const islandPhone = isIPhone && (ISLAND_SCREENS.has(screenKey) || (this.portraitSafeTop || 0) >= 51);
-      // L'île matérielle n'est atteignable que si la page s'affiche sous la barre d'état.
-      this.hardware = islandPhone && standalone && portrait && safeTop >= 51;
-      this.top = this.hardware ? Math.max(8, (safeTop - CUTOUT.height) / 2) : safeTop + 8;
+      // iOS dessine toujours l'heure, la batterie et le réseau par-dessus la zone de la vraie île :
+      // l'île de NathGPT s'affiche donc juste sous la barre d'état pour rester entièrement visible.
+      this.hardware = false;
+      this.top = safeTop + (islandPhone && standalone ? 4 : 8);
       this.el.dataset.mode = this.hardware ? 'hardware' : 'floating';
       this.el.style.setProperty('--di-cutout-w', `${CUTOUT.width}px`);
       this.el.style.setProperty('--di-cutout-h', `${CUTOUT.height}px`);
