@@ -15,9 +15,11 @@
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    film: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 5v14M17 5v14M3 9.5h4M3 14.5h4M17 9.5h4M17 14.5h4"/>',
     scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
     refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/>',
     power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+    'stop-circle': '<circle cx="12" cy="12" r="9"/><rect x="9" y="9" width="6" height="6" rx="1"/>',
     paperclip: '<path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
     file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h8"/>',
     check: '<path d="m5 12 4 4L19 6"/>',
@@ -58,7 +60,7 @@
   voiceTrigger.title = 'Parler à NathGPT';
   voiceTrigger.innerHTML = icon('mic', 18);
   document.querySelector('.send-metal').before(voiceTrigger);
-  document.getElementById('mode-menu').insertAdjacentHTML('beforeend', '<button data-mode="Image">Image</button>');
+  document.getElementById('mode-menu').insertAdjacentHTML('beforeend', '<button data-mode="Image">Image</button><button class="mode-soon" type="button" disabled>Vidéo <span>Bientôt</span></button>');
   const modeWarning = document.createElement('div');
   modeWarning.className = 'mode-warning';
   modeWarning.setAttribute('role', 'alert');
@@ -69,7 +71,7 @@
   const displayAssistantContent = (value) => String(value ?? '').replace(/^\s*(?:\*\*ChatGPT said:\*\*|(?:\*\*)?ChatGPT said(?:\*\*)?\s*:)[ \t\r\n]*/i, '');
   function classifyPrompt(value) {
     const prompt = String(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[’']/g, ' ');
-    const imageObject = '(?:images?|photos?|illustrations?|dessins?|portraits?|logos?|visuels?|affiches?|icones?|peintures?)';
+    const imageObject = '(?:images?|photos?|illustrations?|dessins?|portraits?|logos?|visuels?|affiches?|icones?|peintures?|st[iy]c?kers?|autocollants?|planches?|scrap ?booking|fonds? d ecran|wallpapers?|posters?|bannieres?|avatars?|mascottes?|emojis?|cliparts?|motifs?|collages?|miniatures?|tatouages?|cartes? (?:d anniversaire|de voeux|postales?|d invitation)|coloriages?|bandes? dessinees?|mangas?|pixel ?art)';
     const imageAction = '(?:genere|generer|cree|creer|dessine|dessiner|fais|fait|faire|produis|produire|realise|realiser|fabrique|fabriquer|concois|concevoir|montre|montrer)';
     const asksHow = /\b(?:comment|explique|expliquer|tutoriel|guide|apprends|apprendre)\b/.test(prompt);
     const imageActionMatch = prompt.match(new RegExp(`\\b${imageAction}\\b.{0,80}\\b${imageObject}\\b`));
@@ -284,11 +286,14 @@
     syncConversations();
     setTimeout(askForNotifications, 4200);
     ensurePushSubscription();
+    setTimeout(checkNotices, 1500);
     // Ouverture depuis une notification push (« Tes stickers sont prêts »).
     const params = new URLSearchParams(location.search);
-    if (params.get('view') === 'cricut') {
+    const view = params.get('view');
+    if (view === 'cricut' || view === 'admin') {
       history.replaceState(null, '', location.pathname);
-      openCricut();
+      // Accès tout juste reçu : on relit les droits avant d'ouvrir le panneau.
+      refreshAccountFlags().then(() => (view === 'cricut' ? openCricut() : openAdmin()));
     }
   }
 
@@ -343,7 +348,11 @@
   }
   navigator.serviceWorker?.register('/sw.js').catch(() => {});
   navigator.serviceWorker?.addEventListener('message', (event) => {
-    if (event.data?.type === 'open-view' && event.data.view === 'cricut') { openCricut(); return; }
+    if (event.data?.type === 'open-view') {
+      const view = event.data.view;
+      refreshAccountFlags().then(() => { checkNotices(); if (view === 'cricut') openCricut(); else if (view === 'admin') openAdmin(); });
+      return;
+    }
     const chatId = event.data?.type === 'open-chat' ? event.data.chatId : '';
     if (chatId && chats.some((chat) => chat.id === chatId)) { activeId = chatId; renderAll(); }
   });
@@ -486,14 +495,14 @@
   function renderImages(message) {
     const images = safeImages(message);
     if (!images.length) return '';
-    return `<div class="message-images">${images.map((image, index) => `<figure class="generated-image"><a href="${escapeHtml(image.url)}" target="_blank" rel="noopener"><img src="${escapeHtml(image.url)}" alt="Image générée ${index + 1}" loading="lazy"></a><a class="image-download" href="${escapeHtml(image.url)}" download="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}">${icon('arrow-up', 14)} Télécharger</a></figure>`).join('')}<p class="image-ttl">Image gardée 24 h : télécharge-la pour la conserver.</p></div>`;
+    return `<div class="message-images">${images.map((image, index) => `<figure class="generated-image"><button type="button" class="image-open" data-image-open="${escapeHtml(image.url)}" data-filename="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}" aria-label="Agrandir l’image ${index + 1}"><img src="${escapeHtml(image.url)}" alt="Image générée ${index + 1}" loading="lazy"></button><button type="button" class="image-download" data-image-save="${escapeHtml(image.url)}" data-filename="${escapeHtml(image.filename || `nathgpt-${index + 1}.png`)}">${icon('arrow-up', 14)} Télécharger</button></figure>`).join('')}<p class="image-ttl">Image gardée 4 h : télécharge-la pour la conserver.</p></div>`;
   }
   // Images de plus d'un jour : supprimées du serveur, on affiche un encart à la place d'une image cassée.
   document.addEventListener('error', (event) => {
     const figure = event.target instanceof HTMLImageElement ? event.target.closest('.generated-image') : null;
     if (!figure || figure.classList.contains('is-expired')) return;
     figure.classList.add('is-expired');
-    figure.innerHTML = `<div class="image-expired">${icon('file', 20)}<span>Image expirée</span><small>Les images sont gardées 24 h.</small></div>`;
+    figure.innerHTML = `<div class="image-expired">${icon('file', 20)}<span>Image expirée</span><small>Les images sont gardées 4 h.</small></div>`;
   }, true);
   function renderAttachments() {
     $('attachments').hidden = attachments.length === 0;
@@ -631,7 +640,10 @@
       if (!completed) throw new Error('La réponse a été interrompue.');
       await finishReply();
     } catch (error) {
-      if (error.name === 'AbortError') assistant.error = 'Réponse arrêtée.';
+      if (error.name === 'AbortError') {
+        assistant.error = 'Réponse arrêtée.';
+        api('/api/chat/stop', { method: 'POST', body: JSON.stringify({ request_id: assistant.id }) }).catch(() => {});
+      }
       else if (error.fromServer) assistant.error = error.message;
       else {
         // Connexion coupée (« Load failed », app en arrière-plan…) : le serveur a continué, on récupère la réponse.
@@ -924,12 +936,19 @@
     const chips = data.online ? [
       ['API', 'En ligne', 'ok'],
       ['Chromium', vm.chromium ? 'Ouvert' : 'Arrêté', vm.chromium ? 'ok' : 'bad'],
-      ['État', vm.busy ? 'Génère une réponse' : 'Libre', vm.busy ? 'busy' : 'ok'],
+      ['État', vm.busy ? `Génère ${vm.current?.kind === 'cricut' ? '(Cricut) ' : ''}depuis ${formatDuration(Number(vm.current?.since) || 0)}` : 'Libre', vm.busy ? 'busy' : 'ok'],
       ['Actif depuis', formatDuration(Number(vm.uptime) || 0), ''],
       ['Mémoire', memory, ''],
       ['Charge', Array.isArray(vm.load) ? vm.load.join(' · ') : '—', ''],
     ] : [['API', data.message || 'Hors ligne', 'bad']];
-    if (data.image_storage) chips.push(['Stockage images', data.image_storage === 'ok' ? 'OK' : data.image_storage, data.image_storage === 'ok' ? 'ok' : 'bad']);
+    if (vm.disk?.total) {
+      // Espace disque de la VM : rouge sous 2 Go libres, orange sous 5 Go.
+      const gb = (bytes) => (bytes / 1073741824).toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+      const tone = vm.disk.free < 2 * 1073741824 ? 'bad' : vm.disk.free < 5 * 1073741824 ? 'busy' : 'ok';
+      chips.push(['Disque VM libre', `${gb(vm.disk.free)} Go sur ${gb(vm.disk.total)} Go`, tone]);
+      chips.push(['Images (4 h)', `${(vm.disk.images / 1048576).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Mo`, '']);
+    }
+    $('admin-release').hidden = !(data.online && vm.busy);
     $('admin-status').innerHTML = chips.map(([label, value, tone]) => `<div class="admin-chip ${tone}"><small>${escapeHtml(label)}</small><strong>${escapeHtml(value)}</strong></div>`).join('');
     return Boolean(data.online);
   }
@@ -977,6 +996,8 @@
     closeMenu(); closeSidebar();
     adminMessage('');
     $('admin-panel').hidden = false;
+    roleMessage('');
+    refreshRoles();
     refreshAdmin().finally(() => scheduleAdmin());
   }
   function closeAdmin() {
@@ -1053,7 +1074,7 @@
   });
   $('admin-screen').addEventListener('click', (event) => {
     const image = event.currentTarget;
-    if (!adminControl) { if (adminShot) window.open(adminShot, '_blank', 'noopener'); return; }
+    if (!adminControl) { if (adminShot) openViewer(adminShot, ''); return; }
     const box = image.getBoundingClientRect();
     const x = Math.round((event.clientX - box.left) * image.naturalWidth / box.width);
     const y = Math.round((event.clientY - box.top) * image.naturalHeight / box.height);
@@ -1245,7 +1266,7 @@
       const name = `sticker_${String(index).padStart(2, '0')}.png`;
       if (job.files.includes(name)) {
         const done = job.downloaded.includes(name);
-        tiles.push(`<figure class="cricut-sticker ${done ? 'is-done' : ''}"><img src="${cricutUrl(name)}" alt="Sticker ${index}" loading="lazy"><figcaption>n°${index}</figcaption><a class="cricut-dl" href="${cricutUrl(name, true)}" download="${name}" aria-label="Télécharger le sticker ${index}">${done ? icon('check', 15) : icon('arrow-up', 15)}</a></figure>`);
+        tiles.push(`<figure class="cricut-sticker ${done ? 'is-done' : ''}"><img src="${cricutUrl(name)}" alt="Sticker ${index}" loading="lazy" data-sticker-open="${name}"><figcaption>n°${index}</figcaption><button type="button" class="cricut-dl" data-sticker-save="${name}" aria-label="Télécharger le sticker ${index}">${done ? icon('check', 15) : icon('arrow-up', 15)}</button></figure>`);
       } else if (job.failed.includes(index)) {
         tiles.push(`<figure class="cricut-sticker is-failed"><span>Raté</span><figcaption>n°${index}</figcaption></figure>`);
       } else {
@@ -1279,7 +1300,6 @@
     $('cricut-zip').hidden = !finished;
     $('cricut-all').hidden = !finished;
     if (finished) {
-      $('cricut-zip').href = `/api/cricut/jobs/${job.id}/zip`;
       $('cricut-all').textContent = `Tout télécharger (${job.files.length} images)`;
       prefetchCricutFiles(job);
     }
@@ -1441,7 +1461,11 @@
   });
   // Après un téléchargement, on met à jour les coches et le compte à rebours de suppression.
   $('cricut-panel').addEventListener('click', (event) => {
-    if (event.target.closest('.cricut-dl, #cricut-zip')) setTimeout(refreshCricut, 2500);
+    const save = event.target.closest('[data-sticker-save]')?.dataset.stickerSave;
+    const open = event.target.closest('[data-sticker-open]')?.dataset.stickerOpen;
+    if (save) saveFile(cricutUrl(save, true), save).catch(() => {}).finally(() => setTimeout(refreshCricut, 800));
+    else if (open) openViewer(cricutUrl(open), open, cricutUrl(open, true));
+    else if (event.target.closest('#cricut-zip')) saveFile(`/api/cricut/jobs/${cricutJob.id}/zip`, 'stickers-cricut.zip').catch(() => {}).finally(() => setTimeout(refreshCricut, 800));
   });
   $('cricut-button').addEventListener('click', openCricut);
   $('cricut-close').addEventListener('click', closeCricut);
@@ -1465,6 +1489,196 @@
       await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
     } catch { /* notifications push indisponibles sur cet appareil */ }
   }
+  // Rôles : donner un accès tout de suite ou le programmer à une date et une heure.
+  let roleAccounts = [];
+  let roleKind = 'cricut';
+  let roleWhen = 'now';
+  const ROLE_NAMES = { cricut: 'Cricut', is_admin: 'Admin' };
+  function roleMessage(text, tone = '') {
+    $('role-message').textContent = text;
+    $('role-message').className = `admin-message ${tone}`;
+    $('role-message').hidden = !text;
+  }
+  function renderRoleCurrent() {
+    const selected = roleAccounts.find((item) => item.key === $('role-account').value);
+    if (!selected) { $('role-current').replaceChildren(); return; }
+    const chips = Object.keys(ROLE_NAMES).map((role) => `<span class="role-chip ${selected[role] ? 'on' : ''}">${ROLE_NAMES[role]} ${selected[role] ? '✓' : '—'}</span>`);
+    $('role-current').innerHTML = chips.join('');
+    $('role-revoke').disabled = !selected[roleKind];
+  }
+  function formatGrantDate(ms) {
+    return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(ms));
+  }
+  async function refreshRoles() {
+    try {
+      const [{ accounts }, { grants }] = await Promise.all([api('/api/admin/accounts'), api('/api/admin/grants')]);
+      const current = $('role-account').value;
+      roleAccounts = accounts;
+      $('role-account').innerHTML = accounts.map((item) => `<option value="${escapeHtml(item.key)}">${escapeHtml(item.pseudo)}</option>`).join('');
+      if (accounts.some((item) => item.key === current)) $('role-account').value = current;
+      renderRoleCurrent();
+      $('role-grants').innerHTML = grants.length
+        ? `<strong>Accès programmés</strong>${grants.map((grant) => `<div class="role-grant"><span><b>${escapeHtml(grant.pseudo)}</b> · ${ROLE_NAMES[grant.role] || grant.role}<small>${escapeHtml(formatGrantDate(grant.grant_at))}</small></span><button type="button" data-cancel-grant="${grant.id}">Annuler</button></div>`).join('')}`
+        : '';
+    } catch (error) { roleMessage(error.message, 'bad'); }
+  }
+  function pickSegment(container, attribute, value) {
+    for (const item of container.children) item.classList.toggle('is-active', item.dataset[attribute] === value);
+  }
+  $('role-kind').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-role]');
+    if (!button) return;
+    roleKind = button.dataset.role;
+    pickSegment($('role-kind'), 'role', roleKind);
+    renderRoleCurrent();
+  });
+  $('role-when').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-when]');
+    if (!button) return;
+    roleWhen = button.dataset.when;
+    pickSegment($('role-when'), 'when', roleWhen);
+    $('role-date-field').hidden = roleWhen !== 'later';
+    $('role-give').textContent = roleWhen === 'later' ? 'Programmer l’accès' : 'Donner l’accès';
+    if (roleWhen === 'later' && !$('role-date').value) {
+      // Par défaut : dans une heure, à la minute près (heure locale du téléphone).
+      const soon = new Date(Date.now() + 3600000);
+      soon.setSeconds(0, 0);
+      $('role-date').value = new Date(soon.getTime() - soon.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    }
+  });
+  $('role-account').addEventListener('change', renderRoleCurrent);
+  $('role-give').addEventListener('click', async () => {
+    const key = $('role-account').value;
+    const pseudo = roleAccounts.find((item) => item.key === key)?.pseudo || key;
+    if (!key) return;
+    let grantAt = null;
+    if (roleWhen === 'later') {
+      const date = new Date($('role-date').value);
+      if (!$('role-date').value || Number.isNaN(date.getTime())) { roleMessage('Choisis une date et une heure.', 'bad'); return; }
+      grantAt = date.getTime();
+    }
+    $('role-give').disabled = true;
+    try {
+      const result = await api('/api/admin/grants', { method: 'POST', body: JSON.stringify({ account_key: key, role: roleKind, grant_at: grantAt }) });
+      roleMessage(result.applied ? `${pseudo} a reçu l’accès ${ROLE_NAMES[roleKind]} et a été prévenu(e).`
+        : `Accès ${ROLE_NAMES[roleKind]} programmé pour ${pseudo} : ${formatGrantDate(result.grant.grant_at)}.`, 'ok');
+      await refreshRoles();
+    } catch (error) { roleMessage(error.message, 'bad'); }
+    finally { $('role-give').disabled = false; }
+  });
+  $('role-revoke').addEventListener('click', async () => {
+    const key = $('role-account').value;
+    const pseudo = roleAccounts.find((item) => item.key === key)?.pseudo || key;
+    if (!key || !window.confirm(`Retirer l’accès ${ROLE_NAMES[roleKind]} à ${pseudo} ?`)) return;
+    try {
+      await api('/api/admin/roles/revoke', { method: 'POST', body: JSON.stringify({ account_key: key, role: roleKind }) });
+      roleMessage(`Accès ${ROLE_NAMES[roleKind]} retiré à ${pseudo}.`, 'ok');
+      await refreshRoles();
+    } catch (error) { roleMessage(error.message, 'bad'); }
+  });
+  $('role-grants').addEventListener('click', async (event) => {
+    const id = event.target.closest('[data-cancel-grant]')?.dataset.cancelGrant;
+    if (!id) return;
+    try { await api(`/api/admin/grants/${id}`, { method: 'DELETE' }); roleMessage('Programmation annulée.', 'ok'); }
+    catch (error) { roleMessage(error.message, 'bad'); }
+    await refreshRoles();
+  });
+
+  // Accès reçus : bannière dans l'app (en plus de la notification push) et menu mis à jour.
+  let noticesShowing = false;
+  async function refreshAccountFlags() {
+    try {
+      const { account: fresh } = await api('/api/auth/me');
+      if (account?.key !== fresh.key) return;
+      account.isAdmin = fresh.is_admin === true;
+      account.cricut = fresh.cricut === true;
+      $('admin-button').hidden = !account.isAdmin;
+      $('cricut-button').hidden = !account.cricut;
+    } catch { /* hors ligne */ }
+  }
+  async function checkNotices() {
+    if (!account || noticesShowing) return;
+    let items = [];
+    try { ({ notices: items } = await api('/api/notices')); } catch { return; }
+    if (!items.length) return;
+    noticesShowing = true;
+    await refreshAccountFlags();
+    const notice = items[0];
+    const done = () => { noticesShowing = false; api(`/api/notices/${notice.id}/seen`, { method: 'POST' }).catch(() => {}).finally(() => setTimeout(checkNotices, 400)); };
+    notificationBanner('Nouvel accès 🎉', `Tu viens de recevoir ${notice.label} !`, [
+      { label: 'Plus tard', onSelect: done },
+      { label: 'Ouvrir', primary: true, onSelect: () => { done(); if (notice.role === 'cricut') openCricut(); else openAdmin(); } },
+    ]);
+  }
+  setInterval(() => { if (document.visibilityState === 'visible') checkNotices(); }, 60000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkNotices(); });
+  // Images et fichiers : sur iPhone (app installée), ouvrir un fichier l'affiche en plein écran sans
+  // bouton retour. On montre donc les images dans une visionneuse de la page, et « Enregistrer »
+  // passe par le menu de partage d'iOS (Enregistrer l'image / Enregistrer dans Fichiers).
+  const isStandaloneApple = () => isAppleDevice && (navigator.standalone === true || matchMedia('(display-mode: standalone)').matches);
+  async function fetchFile(url, filename) {
+    const response = await fetch(url, { credentials: 'same-origin' });
+    if (!response.ok) throw new Error('Fichier indisponible (peut-être expiré).');
+    const blob = await response.blob();
+    return new File([blob], filename, { type: blob.type || 'application/octet-stream' });
+  }
+  async function saveFile(url, filename) {
+    const canShareFiles = (file) => Boolean(navigator.canShare?.({ files: [file] }));
+    if (isAppleDevice && navigator.canShare) {
+      const file = await fetchFile(url, filename);
+      if (canShareFiles(file)) {
+        try { await navigator.share({ files: [file] }); }
+        catch (error) {
+          // Partage refusé faute de toucher récent : le fichier est prêt, on redemande un toucher.
+          if (error.name === 'NotAllowedError') {
+            notificationBanner('Fichier prêt', `Touche « Enregistrer » pour garder ${filename}.`, [
+              { label: 'Annuler', onSelect: () => {} },
+              { label: 'Enregistrer', primary: true, onSelect: () => { navigator.share({ files: [file] }).catch(() => {}); } },
+            ]);
+          }
+        }
+        return;
+      }
+    }
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+  function openViewer(src, filename, saveUrl = src) {
+    closeViewer();
+    const viewer = document.createElement('div');
+    viewer.className = 'image-viewer';
+    viewer.setAttribute('role', 'dialog');
+    viewer.setAttribute('aria-label', 'Image');
+    viewer.innerHTML = `<img src="${escapeHtml(src)}" alt=""><div class="image-viewer-bar"><button type="button" data-viewer-close>${icon('x', 18)} Fermer</button>${filename ? `<button type="button" class="is-primary" data-viewer-save>${icon('arrow-up', 16)} Enregistrer</button>` : ''}</div>`;
+    viewer.addEventListener('click', (event) => {
+      if (event.target.closest('[data-viewer-save]')) saveFile(saveUrl, filename).catch((error) => notificationBanner('Enregistrement impossible', error.message, [{ label: 'OK', primary: true, onSelect: () => {} }]));
+      else if (event.target.closest('[data-viewer-close]') || event.target === viewer) closeViewer();
+    });
+    document.body.append(viewer);
+  }
+  function closeViewer() { document.querySelector('.image-viewer')?.remove(); }
+  $('messages').addEventListener('click', (event) => {
+    const open = event.target.closest('[data-image-open]');
+    const save = event.target.closest('[data-image-save]');
+    if (save) { event.preventDefault(); saveFile(save.dataset.imageSave, save.dataset.filename).catch(() => {}); }
+    else if (open) { event.preventDefault(); openViewer(open.dataset.imageOpen, open.dataset.filename); }
+  });
+
+  // Libérer : quand NathGPT reste bloqué sur « Génère une réponse ».
+  $('admin-release').addEventListener('click', async () => {
+    if (!window.confirm('Arrêter la génération en cours et libérer NathGPT ?')) return;
+    $('admin-release').disabled = true;
+    adminMessage('Libération en cours…', 'busy');
+    try {
+      const result = await api('/api/admin/release', { method: 'POST' });
+      adminMessage(result.released ? 'NathGPT est libéré.' : 'NathGPT est toujours bloqué : utilise « Relancer NathGPT ».', result.released ? 'ok' : 'bad');
+    } catch (error) { adminMessage(`Libération impossible : ${error.message}`, 'bad'); }
+    finally { $('admin-release').disabled = false; refreshAdminStatus(); }
+  });
   window.addEventListener('beforeunload', () => pendingRequest?.abort());
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && account) { event.preventDefault(); newChat(); }

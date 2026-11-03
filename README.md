@@ -54,7 +54,13 @@ Ouvrez http://127.0.0.1:4173/. Sans `SUPABASE_URL`, les comptes sont enregistré
 
 Dans Supabase > Table Editor > `nathgpt_accounts`, coche `is_admin` sur ton compte (après avoir relancé `supabase/schema.sql`).
 Reconnecte-toi : le menu du profil affiche « Administration » (état de la VM, écran en direct, logs, bouton « Relancer NathGPT »).
-Le droit est vérifié à chaque demande : décocher la case coupe l'accès tout de suite. L'API de la VM doit être à jour (`TOUT_FAIRE_TOUT_SEUL.bat`).
+Le droit est vérifié à chaque demande : décocher la case coupe l'accès tout de suite.
+Section « Rôles » : donner Cricut ou Admin tout de suite ou à une date et une heure ; la personne reçoit une notification.
+Bouton « Libérer » : arrête une génération bloquée (le bouton Arrêter de l'utilisateur libère aussi NathGPT). L'API de la VM doit être à jour (`TOUT_FAIRE_TOUT_SEUL.bat`).
+
+## Images générées
+
+Enregistrées sur la VM (`/root/NathGPT/images`), supprimées après 4 heures. La page Admin affiche l'espace disque libre de la VM.
 
 ## Mode Cricut (Cricutastrophe)
 

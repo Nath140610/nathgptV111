@@ -19,6 +19,23 @@ alter table public.nathgpt_accounts add column if not exists is_admin boolean no
 -- Mode Cricut : cocher cricut donne accès au panneau Cricutastrophe (planche de stickers -> un PNG par sticker).
 alter table public.nathgpt_accounts add column if not exists cricut boolean not null default false;
 
+-- Rôles donnés par un admin : tout de suite ou programmés à une date et une heure.
+create table if not exists public.nathgpt_role_grants (
+  id          bigint generated always as identity primary key,
+  account_key text not null references public.nathgpt_accounts(key) on delete cascade,
+  role        text not null check (role in ('cricut', 'is_admin')),
+  grant_at    timestamptz not null,
+  created_by  text,
+  created_at  timestamptz not null default now(),
+  applied_at  timestamptz,
+  seen_at     timestamptz
+);
+create index if not exists nathgpt_role_grants_due_idx on public.nathgpt_role_grants (applied_at, grant_at);
+create index if not exists nathgpt_role_grants_account_idx on public.nathgpt_role_grants (account_key);
+alter table public.nathgpt_role_grants enable row level security;
+revoke all on public.nathgpt_role_grants from anon, authenticated;
+grant select, insert, update, delete on public.nathgpt_role_grants to service_role;
+
 -- Abonnements aux notifications push (une ligne par appareil).
 create table if not exists public.nathgpt_push_subscriptions (
   endpoint    text primary key check (endpoint like 'https://%' and char_length(endpoint) <= 1000),

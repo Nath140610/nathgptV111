@@ -24,7 +24,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 
 from services.nathgpt_client import NathGPTClient, SSEProtocolError, UpstreamStatusError
-from services.store import IMAGE_TYPES, SQLiteStore, StoreError, SupabaseStore, hash_password, verify_password
+from services.store import IMAGE_TYPES, SQLiteStore, StoreError, SupabaseStore, hash_password, image_folder, verify_password
 
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -46,6 +46,7 @@ MAX_CHAT_BODY_BYTES = 36 * 1024 * 1024  # fichiers joints en base64 (+33 %)
 PURGE_INTERVAL_SECONDS = 60 * 60
 MEMORY_IMAGES_BYTES = 150 * 1024 * 1024
 HEARTBEAT_SECONDS = 10
+GRANT_CHECK_SECONDS = 30
 # Compteur d'économies : stocké en tokens (même prix que le site). Une image générée compte 0,050 €.
 PRICE_PER_TOKEN_EUR = 0.00000892
 IMAGE_COST_EUR = 0.05
@@ -78,7 +79,8 @@ class Settings:
 class ChatJob:
     """Réponse en cours ou terminée, gardée 1 h pour être récupérée après une coupure."""
 
-    def __init__(self):
+    def __init__(self, conversation_id: str = ""):
+        self.conversation_id = conversation_id
         self.events: list[tuple[str, dict]] = []
         self.answer = ""
         self.images: list[dict] = []
@@ -316,11 +318,19 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                 except Exception:
                     LOG.warning("Nettoyage des images impossible", exc_info=True)
                 await asyncio.sleep(PURGE_INTERVAL_SECONDS)
-        task = asyncio.create_task(purge_forever())
+        async def grants_forever():
+            while True:
+                try:
+                    await apply_due_grants()
+                except Exception:
+                    LOG.warning("Application des accès programmés impossible", exc_info=True)
+                await asyncio.sleep(GRANT_CHECK_SECONDS)
+        tasks = [asyncio.create_task(purge_forever()), asyncio.create_task(grants_forever())]
         try:
             yield
         finally:
-            task.cancel()
+            for task in tasks:
+                task.cancel()
 
     app = FastAPI(title="NathGPT", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store = store
@@ -343,8 +353,16 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     async def store_unavailable(_request: Request, _error: StoreError):
         return JSONResponse({"detail": "La base de données est momentanément indisponible."}, status_code=503)
 
+    seen_url = {"value": os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")}
+
+    def public_url() -> str:
+        """Adresse publique du site (contact VAPID des notifications envoyées hors requête)."""
+        return seen_url["value"] or "https://localhost"  # Render fournit RENDER_EXTERNAL_URL
+
     @app.middleware("http")
     async def security_headers(request: Request, call_next):
+        if not seen_url["value"] and request.url.scheme == "https":
+            seen_url["value"] = str(request.base_url).rstrip("/")
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
@@ -435,11 +453,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
     @app.get("/api/admin/status")
     async def admin_status(request: Request):
         await admin_account(request)
-        try:
-            storage = await store.image_storage_status()
-        except StoreError as error:
-            storage = str(error)
-        site = {"active_generations": gate.global_active, "image_storage": storage}
+        site = {"active_generations": gate.global_active}
         try:
             vm = (await admin_upstream("GET", "/admin/status")).json()
         except HTTPException as error:
@@ -472,6 +486,15 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         await admin_upstream("POST", "/admin/input", payload)
         return {"ok": True}
 
+    @app.post("/api/admin/release")
+    async def admin_release(request: Request):
+        """Libère l'état « génère une réponse » quand il reste bloqué."""
+        check_origin(request)
+        account = await admin_account(request)
+        result = (await admin_upstream("POST", "/admin/release")).json()
+        LOG.warning("Libération de NathGPT demandée par %s (%s)", account["key"], result.get("was"))
+        return {"ok": True, "released": result.get("released") is True, "was": result.get("was")}
+
     @app.post("/api/admin/restart")
     async def admin_restart(request: Request):
         check_origin(request)
@@ -488,6 +511,23 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             return await store.add_usage(account_key, IMAGE_TOKENS * count, False)
         except StoreError:
             return None
+
+    # ----- Images générées : stockées sur la VM (supprimées par elle après 4 h) -----
+    async def vm_save_image(account_key: str, name: str, data: bytes) -> None:
+        path = f"/storage/images/{image_folder(account_key)}/{name}"
+        try:
+            response = await client.admin("PUT", path, content=data, read_timeout=60)
+        except httpx.HTTPError as error:
+            raise StoreError("VM injoignable") from error
+        if response.status_code != 200:
+            raise StoreError(f"VM : stockage refusé (HTTP {response.status_code})")
+
+    async def vm_load_image(account_key: str, name: str) -> bytes | None:
+        try:
+            response = await client.admin("GET", f"/storage/images/{image_folder(account_key)}/{name}", read_timeout=60)
+        except httpx.HTTPError:
+            return None
+        return response.content if response.status_code == 200 else None
 
     # ----- Notifications push (VAPID) -----
     PUSH_FIELD_RE = re.compile(r"^[A-Za-z0-9_=-]{1,200}$")
@@ -646,6 +686,110 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             await send_push(owner, payload, str(request.base_url).rstrip("/"))
         return {"ok": True}
 
+    # ----- Rôles : un admin donne un accès tout de suite ou le programme (date et heure) -----
+    ROLE_LABELS = {"cricut": "l’accès Cricut", "is_admin": "l’accès Administration"}
+    ROLE_VIEWS = {"cricut": "cricut", "is_admin": "admin"}
+    last_grant_check = 0.0
+
+    async def apply_due_grants() -> int:
+        """Applique les accès arrivés à échéance et prévient chaque personne (notification push)."""
+        nonlocal last_grant_check
+        last_grant_check = time.monotonic()
+        applied = 0
+        for grant in await store.claim_due_grants(time.time()):
+            if not await store.set_role(grant["account_key"], grant["role"], True):
+                continue
+            applied += 1
+            LOG.info("Accès %s donné à %s", grant["role"], grant["account_key"])
+            label = ROLE_LABELS[grant["role"]]
+            await send_push(grant["account_key"], {
+                "title": "Nouvel accès 🎉", "body": f"Tu viens de recevoir {label} ! Ouvre le menu de ton profil pour l’essayer.",
+                "view": ROLE_VIEWS[grant["role"]], "tag": f"role-{grant['id']}",
+            }, public_url())
+        return applied
+
+    async def maybe_apply_grants() -> None:
+        # Render gratuit peut dormir : chaque visite rattrape aussi les accès programmés en retard.
+        if time.monotonic() - last_grant_check > 15:
+            with contextlib.suppress(StoreError):
+                await apply_due_grants()
+
+    def parse_role(value) -> str:
+        if value not in ROLE_LABELS:
+            raise HTTPException(400, detail="Rôle inconnu.")
+        return value
+
+    @app.get("/api/admin/accounts")
+    async def admin_accounts(request: Request):
+        await admin_account(request)
+        return {"ok": True, "accounts": await store.list_accounts()}
+
+    @app.get("/api/admin/grants")
+    async def admin_grants(request: Request):
+        await admin_account(request)
+        grants = await store.list_pending_grants()
+        return {"ok": True, "grants": [{**g, "grant_at": int(g["grant_at"] * 1000)} for g in grants]}
+
+    @app.post("/api/admin/grants")
+    async def admin_grant(request: Request):
+        """Donne un rôle maintenant (grant_at absent) ou le programme (grant_at en millisecondes)."""
+        check_origin(request)
+        admin = await admin_account(request)
+        payload = await read_json_body(request, 2048)
+        role, key = parse_role(payload.get("role")), payload.get("account_key")
+        if not isinstance(key, str) or not await store.get_account(key):
+            raise HTTPException(404, detail="Compte introuvable.")
+        when = payload.get("grant_at")
+        now = time.time()
+        if when is None:
+            grant_at = now
+        elif isinstance(when, (int, float)) and not isinstance(when, bool):
+            grant_at = when / 1000
+            if grant_at < now - 60:
+                raise HTTPException(400, detail="Choisis une date dans le futur.")
+            if grant_at > now + 366 * 86400:
+                raise HTTPException(400, detail="Un an maximum.")
+        else:
+            raise HTTPException(400, detail="Date invalide.")
+        grant = await store.create_grant(key, role, grant_at, admin["key"])
+        applied = await apply_due_grants() if grant_at <= now + 1 else 0
+        return {"ok": True, "applied": bool(applied), "grant": {**grant, "grant_at": int(grant["grant_at"] * 1000)}}
+
+    @app.delete("/api/admin/grants/{grant_id}")
+    async def admin_cancel_grant(grant_id: int, request: Request):
+        check_origin(request)
+        await admin_account(request)
+        if not await store.cancel_grant(grant_id):
+            raise HTTPException(404, detail="Programmation introuvable (déjà appliquée ?).")
+        return {"ok": True}
+
+    @app.post("/api/admin/roles/revoke")
+    async def admin_revoke(request: Request):
+        check_origin(request)
+        admin = await admin_account(request)
+        payload = await read_json_body(request, 2048)
+        role, key = parse_role(payload.get("role")), payload.get("account_key")
+        if role == "is_admin" and key == admin["key"]:
+            raise HTTPException(400, detail="Tu ne peux pas retirer ton propre accès admin.")
+        if not isinstance(key, str) or not await store.set_role(key, role, False):
+            raise HTTPException(404, detail="Compte introuvable.")
+        return {"ok": True}
+
+    @app.get("/api/notices")
+    async def notices(request: Request):
+        """Accès reçus pas encore vus : affichés en bannière dans l'app (si la notification est passée inaperçue)."""
+        account = await current_account(request)
+        await maybe_apply_grants()
+        items = await store.list_notices(account["key"])
+        return {"ok": True, "notices": [{"id": n["id"], "role": n["role"], "label": ROLE_LABELS.get(n["role"], n["role"])} for n in items]}
+
+    @app.post("/api/notices/{notice_id}/seen")
+    async def notice_seen(notice_id: int, request: Request):
+        check_origin(request)
+        account = await current_account(request)
+        await store.mark_notice_seen(account["key"], notice_id)
+        return {"ok": True}
+
     @app.get("/api/conversations")
     async def list_conversations(request: Request):
         account = await current_account(request)
@@ -685,11 +829,13 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(404)
         data = memory_images.get((account["key"], name))
         if data is None:
+            data = await vm_load_image(account["key"], name)
+        if data is None:  # anciennes images enregistrées dans Supabase
             data = await store.load_image(account["key"], name)
         if data is None:
             raise HTTPException(404)
         media_type = {v: k for k, v in IMAGE_TYPES.items()}[match.group(1)]
-        return Response(data, media_type=media_type, headers={"Cache-Control": "private, max-age=31536000, immutable"})
+        return Response(data, media_type=media_type, headers={"Cache-Control": "private, max-age=14400"})
 
     @app.post("/api/chat")
     async def chat(request: Request):
@@ -748,20 +894,20 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             return {**done, "account_tokens_used": total, "usage_estimated": account["usage_estimated"] or not isinstance(exact, int)}
 
         async def store_image(data: dict) -> dict | None:
-            """Enregistre l'image (Supabase Storage / disque) et renvoie un lien court au navigateur."""
+            """Enregistre l'image sur la VM (4 h) et renvoie un lien court au navigateur."""
             decoded = decode_image(data)
             if not decoded:
                 return None
             raw, mime_type = decoded
             name = f"{uuid.uuid4().hex}.{IMAGE_TYPES[mime_type]}"
             try:
-                await store.save_image(account["key"], name, raw, mime_type)
+                await vm_save_image(account["key"], name, raw)
             except StoreError as error:
                 LOG.error("Image non enregistrée dans le stockage (%s) : gardée en mémoire", error)
                 remember_image(account["key"], name, raw)
             return {"url": f"/api/images/{name}", "mime_type": mime_type, "filename": data.get("filename") or name}
 
-        job = ChatJob()
+        job = ChatJob(conversation_id)
         jobs[(account["key"], request_id)] = job
 
         async def produce():
@@ -829,6 +975,22 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             event_stream(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
         )
+
+    @app.post("/api/chat/stop")
+    async def chat_stop(request: Request):
+        """Bouton « Arrêter » : la VM arrête la génération et NathGPT est libéré tout de suite."""
+        check_origin(request)
+        account = await current_account(request)
+        request_id = (await read_json_body(request, 1024)).get("request_id")
+        job = jobs.get((account["key"], request_id)) if isinstance(request_id, str) else None
+        if not job or job.finished:
+            return {"ok": True, "cancelled": False}
+        try:
+            response = await client.admin("POST", "/v1/cancel", {"conversation_id": job.conversation_id}, read_timeout=10)
+            cancelled = response.status_code == 200 and response.json().get("cancelled") is True
+        except (httpx.HTTPError, ValueError):
+            cancelled = False
+        return {"ok": True, "cancelled": cancelled}
 
     @app.get("/api/chat/result/{request_id}")
     async def chat_result(request_id: str, request: Request):

@@ -34,7 +34,16 @@ def test_image_stream_saved_and_private(tmp_path):
     encoded = base64.b64encode(png).decode()
     sent = []
 
+    vm_storage = {}
+
     def upstream(request):
+        # Fausse VM : /v1/ask génère l'image, /storage/images la garde (4 h sur la vraie VM).
+        if request.url.path.startswith('/storage/images/'):
+            if request.method == 'PUT':
+                vm_storage[request.url.path] = request.content
+                return httpx.Response(200, json={'ok': True})
+            data = vm_storage.get(request.url.path)
+            return httpx.Response(200, content=data) if data else httpx.Response(404)
         sent.append(json.loads(request.content))
         image_event = json.dumps({'mime_type': 'image/png', 'filename': 'image_1.png', 'base64': encoded, 'b64_json': encoded})
         body = f'event: image\ndata: {image_event}\n\nevent: done\ndata: {{"type":"image"}}\n\n'.encode()
@@ -59,6 +68,7 @@ def test_image_stream_saved_and_private(tmp_path):
             assert served.headers['content-type'] == 'image/png'
             assert (await bob.get(event['url'])).status_code == 404
             assert (await alice.get('/api/images/..%2Fdb.sqlite3')).status_code == 404
+            assert list(vm_storage) == [f"/storage/images/{image_folder('alice')}/{event['url'].rsplit('/', 1)[1]}"]
 
     run(scenario())
 
@@ -182,16 +192,13 @@ def test_supabase_creates_missing_bucket():
     run(scenario())
 
 
-def test_image_shown_even_if_storage_fails(tmp_path, monkeypatch):
-    from services.store import SQLiteStore, StoreError
+def test_image_shown_even_if_storage_fails(tmp_path):
     png = big_png()
     encoded = base64.b64encode(png).decode()
 
-    async def broken_save(self, key, name, data, mime_type):
-        raise StoreError('Supabase Storage HTTP 403 new row violates row-level security policy')
-    monkeypatch.setattr(SQLiteStore, 'save_image', broken_save)
-
-    def upstream(_request):
+    def upstream(request):
+        if request.url.path.startswith('/storage/images/'):
+            return httpx.Response(507, json={'ok': False})  # disque de la VM plein
         body = f'event: image\ndata: {json.dumps({"mime_type": "image/png", "base64": encoded})}\n\nevent: done\ndata: {{"type":"image"}}\n\n'.encode()
         return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=body)
 

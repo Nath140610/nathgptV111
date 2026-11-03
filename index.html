@@ -60,6 +60,7 @@
       <input id="search-input" class="search-input" type="search" placeholder="Rechercher une conversation" aria-label="Rechercher une conversation" hidden>
       <div class="sidebar-section-title">Conversations</div>
       <nav id="chat-list" class="chat-list" aria-label="Conversations"></nav>
+      <div class="soon-card" role="note"><span class="soon-badge"><span data-icon="film" data-size="13"></span> Bientôt</span><strong>Bientôt, les vidéos IA gratuites !</strong><small>Une idée, un message… et ta vidéo prend vie.</small></div>
       <div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span> NathGPT connecté</div><div class="profile-wrap" data-menu><button id="profile-button" class="profile-button" aria-expanded="false"><span id="avatar" class="avatar"></span><span class="profile-name"><span id="profile-name"></span><small>Compte NathGPT</small></span><span data-icon="more" data-size="18"></span></button><div id="profile-menu" class="popover profile-popover" hidden><button id="cricut-button" hidden><span data-icon="scissors" data-size="16"></span> Mode Cricut</button><button id="admin-button" hidden><span data-icon="shield" data-size="16"></span> Administration</button><button id="logout-button"><span data-icon="logout" data-size="16"></span> Se déconnecter</button></div></div></div>
     </aside>
     <main class="main-panel">
@@ -101,8 +102,21 @@
           <button type="button" data-scroll="-5">Molette ↑</button><button type="button" data-scroll="5">Molette ↓</button>
         </div>
       </div>
-      <div class="admin-actions"><button id="admin-refresh" type="button"><span data-icon="refresh" data-size="16"></span> Actualiser</button><button id="admin-restart" type="button" class="is-danger"><span data-icon="power" data-size="16"></span> <span id="admin-restart-label">Relancer NathGPT</span></button></div>
+      <div class="admin-actions"><button id="admin-refresh" type="button"><span data-icon="refresh" data-size="16"></span> Actualiser</button><button id="admin-release" type="button" hidden><span data-icon="stop-circle" data-size="16"></span> Libérer</button><button id="admin-restart" type="button" class="is-danger"><span data-icon="power" data-size="16"></span> <span id="admin-restart-label">Relancer NathGPT</span></button></div>
       <p id="admin-message" class="admin-message" hidden></p>
+      <section class="admin-roles" aria-labelledby="roles-title">
+        <h3 id="roles-title">Rôles</h3>
+        <label class="roles-field"><span>Compte</span><select id="role-account"></select></label>
+        <div id="role-current" class="roles-current"></div>
+        <div class="roles-row">
+          <div id="role-kind" class="admin-segment" role="radiogroup" aria-label="Rôle"><button type="button" data-role="cricut" class="is-active">Cricut</button><button type="button" data-role="is_admin">Admin</button></div>
+          <div id="role-when" class="admin-segment" role="radiogroup" aria-label="Quand"><button type="button" data-when="now" class="is-active">Maintenant</button><button type="button" data-when="later">Programmer</button></div>
+        </div>
+        <label id="role-date-field" class="roles-field" hidden><span>Date et heure</span><input id="role-date" type="datetime-local"></label>
+        <div class="roles-actions"><button id="role-give" type="button" class="is-primary">Donner l’accès</button><button id="role-revoke" type="button" class="is-danger">Retirer</button></div>
+        <p id="role-message" class="admin-message" hidden></p>
+        <div id="role-grants" class="roles-grants"></div>
+      </section>
       <details id="admin-logs-box" class="admin-logs"><summary>Logs de NathGPT</summary><pre id="admin-logs">Chargement…</pre></details>
     </div>
   </section>
@@ -123,7 +137,7 @@
       <div id="cricut-stickers" class="cricut-stickers"></div>
       <div id="cricut-actions" class="cricut-actions" hidden>
         <button id="cricut-all" type="button" class="cricut-primary" hidden>Tout télécharger</button>
-        <a id="cricut-zip" class="cricut-secondary" download="stickers-cricut.zip" hidden>Télécharger en ZIP</a>
+        <button id="cricut-zip" type="button" class="cricut-secondary" hidden>Télécharger en ZIP</button>
         <button id="cricut-new" type="button">Nouvelle planche</button>
         <button id="cricut-delete" type="button" class="is-danger">Supprimer maintenant</button>
       </div>

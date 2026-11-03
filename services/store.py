@@ -25,8 +25,9 @@ SESSION_SECONDS = 60 * 60 * 24 * 30
 SALT_ALPHABET = string.ascii_letters + string.digits
 IMAGE_BUCKET = 'nathgpt-images'
 IMAGE_TYPES = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'}
-IMAGE_TTL_SECONDS = 60 * 60 * 24  # images générées gardées 1 jour, puis supprimées
+IMAGE_TTL_SECONDS = 60 * 60 * 4  # images générées gardées 4 h, puis supprimées
 PURGE_BATCH = 1000
+ROLES = ('cricut', 'is_admin')  # rôles qu'un admin peut donner
 
 
 def image_folder(account_key: str) -> str:
@@ -93,6 +94,7 @@ class SQLiteStore:
             for flag in ('is_admin', 'cricut'):
                 if flag not in columns:
                     db.execute(f'ALTER TABLE nathgpt_accounts ADD COLUMN {flag} INTEGER NOT NULL DEFAULT 0')
+            db.execute('CREATE TABLE IF NOT EXISTS nathgpt_role_grants (id INTEGER PRIMARY KEY AUTOINCREMENT, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, role TEXT NOT NULL, grant_at REAL NOT NULL, created_by TEXT, created_at REAL NOT NULL, applied_at REAL, seen_at REAL)')
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_push_subscriptions (endpoint TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL)')
             db.execute("CREATE TABLE IF NOT EXISTS nathgpt_conversations (id TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT '', messages TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
 
@@ -152,6 +154,74 @@ class SQLiteStore:
 
     async def delete_push_subscription(self, endpoint: str) -> None:
         await self._run(self._delete_push, endpoint)
+
+    # ----- Rôles (donnés tout de suite ou programmés par un admin) -----
+    def _list_accounts(self):
+        with self.lock, self._connect() as db:
+            rows = db.execute('SELECT key, pseudo, is_admin, cricut FROM nathgpt_accounts ORDER BY pseudo COLLATE NOCASE').fetchall()
+        return [{'key': r['key'], 'pseudo': r['pseudo'], 'is_admin': bool(r['is_admin']), 'cricut': bool(r['cricut'])} for r in rows]
+
+    async def list_accounts(self) -> list[dict]:
+        return await self._run(self._list_accounts)
+
+    def _set_role(self, key, role, value):
+        with self.lock, self._connect() as db:
+            return db.execute(f'UPDATE nathgpt_accounts SET {role}=? WHERE key=?', (int(value), key)).rowcount > 0
+
+    async def set_role(self, key: str, role: str, value: bool) -> bool:
+        assert role in ROLES
+        return await self._run(self._set_role, key, role, value)
+
+    def _create_grant(self, key, role, grant_at, created_by):
+        with self.lock, self._connect() as db:
+            cursor = db.execute('INSERT INTO nathgpt_role_grants (account_key, role, grant_at, created_by, created_at) VALUES (?, ?, ?, ?, ?)',
+                                (key, role, grant_at, created_by, time.time()))
+            return {'id': cursor.lastrowid, 'account_key': key, 'role': role, 'grant_at': grant_at}
+
+    async def create_grant(self, key: str, role: str, grant_at: float, created_by: str) -> dict:
+        assert role in ROLES
+        return await self._run(self._create_grant, key, role, grant_at, created_by)
+
+    def _pending_grants(self):
+        with self.lock, self._connect() as db:
+            rows = db.execute('SELECT g.id, g.account_key, g.role, g.grant_at, a.pseudo FROM nathgpt_role_grants g JOIN nathgpt_accounts a ON a.key=g.account_key WHERE g.applied_at IS NULL ORDER BY g.grant_at').fetchall()
+        return [dict(r) for r in rows]
+
+    async def list_pending_grants(self) -> list[dict]:
+        return await self._run(self._pending_grants)
+
+    def _cancel_grant(self, grant_id):
+        with self.lock, self._connect() as db:
+            return db.execute('DELETE FROM nathgpt_role_grants WHERE id=? AND applied_at IS NULL', (grant_id,)).rowcount > 0
+
+    async def cancel_grant(self, grant_id: int) -> bool:
+        return await self._run(self._cancel_grant, grant_id)
+
+    def _claim_due(self, now):
+        with self.lock, self._connect() as db:
+            rows = [dict(r) for r in db.execute('SELECT id, account_key, role, grant_at FROM nathgpt_role_grants WHERE applied_at IS NULL AND grant_at<=?', (now,))]
+            claimed = []
+            for row in rows:
+                if db.execute('UPDATE nathgpt_role_grants SET applied_at=? WHERE id=? AND applied_at IS NULL', (now, row['id'])).rowcount:
+                    claimed.append(row)
+            return claimed
+
+    async def claim_due_grants(self, now: float) -> list[dict]:
+        return await self._run(self._claim_due, now)
+
+    def _notices(self, key):
+        with self.lock, self._connect() as db:
+            return [dict(r) for r in db.execute('SELECT id, role FROM nathgpt_role_grants WHERE account_key=? AND applied_at IS NOT NULL AND seen_at IS NULL ORDER BY applied_at', (key,))]
+
+    async def list_notices(self, key: str) -> list[dict]:
+        return await self._run(self._notices, key)
+
+    def _seen(self, key, grant_id):
+        with self.lock, self._connect() as db:
+            db.execute('UPDATE nathgpt_role_grants SET seen_at=? WHERE id=? AND account_key=?', (time.time(), grant_id, key))
+
+    async def mark_notice_seen(self, key: str, grant_id: int) -> None:
+        await self._run(self._seen, key, grant_id)
 
     def _create_session(self, key):
         sid = secrets.token_urlsafe(32)
@@ -328,6 +398,65 @@ class SupabaseStore:
 
     async def delete_push_subscription(self, endpoint) -> None:
         await self._request('DELETE', '/nathgpt_push_subscriptions', params={'endpoint': f'eq.{endpoint}'})
+
+    # ----- Rôles (donnés tout de suite ou programmés par un admin) -----
+    @staticmethod
+    def _iso(epoch: float) -> str:
+        return datetime.fromtimestamp(epoch, timezone.utc).isoformat()
+
+    @staticmethod
+    def _epoch(value: str) -> float:
+        return datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp()
+
+    async def list_accounts(self) -> list[dict]:
+        try:
+            rows = (await self._request('GET', '/nathgpt_accounts', params={'select': 'key,pseudo,is_admin,cricut', 'order': 'pseudo.asc', 'limit': '1000'})).json()
+        except StoreError:  # colonnes de rôles absentes (schema.sql pas relancé)
+            rows = (await self._request('GET', '/nathgpt_accounts', params={'select': 'key,pseudo', 'order': 'pseudo.asc', 'limit': '1000'})).json()
+        return [{'key': r['key'], 'pseudo': r['pseudo'], 'is_admin': r.get('is_admin') is True, 'cricut': r.get('cricut') is True} for r in rows]
+
+    async def set_role(self, key, role, value) -> bool:
+        assert role in ROLES
+        rows = (await self._request('PATCH', '/nathgpt_accounts', params={'key': f'eq.{key}'}, json={role: bool(value)},
+                                    headers={'Prefer': 'return=representation'})).json()
+        return bool(rows)
+
+    async def create_grant(self, key, role, grant_at, created_by) -> dict:
+        assert role in ROLES
+        rows = (await self._request('POST', '/nathgpt_role_grants', json={'account_key': key, 'role': role, 'grant_at': self._iso(grant_at), 'created_by': created_by},
+                                    headers={'Prefer': 'return=representation'})).json()
+        return {'id': rows[0]['id'], 'account_key': key, 'role': role, 'grant_at': grant_at}
+
+    async def list_pending_grants(self) -> list[dict]:
+        rows = (await self._request('GET', '/nathgpt_role_grants', params={
+            'select': 'id,account_key,role,grant_at,account:nathgpt_accounts(pseudo)', 'applied_at': 'is.null', 'order': 'grant_at.asc'})).json()
+        return [{'id': r['id'], 'account_key': r['account_key'], 'role': r['role'], 'grant_at': self._epoch(r['grant_at']),
+                 'pseudo': (r.get('account') or {}).get('pseudo', r['account_key'])} for r in rows]
+
+    async def cancel_grant(self, grant_id) -> bool:
+        rows = (await self._request('DELETE', '/nathgpt_role_grants', params={'id': f'eq.{grant_id}', 'applied_at': 'is.null'},
+                                    headers={'Prefer': 'return=representation'})).json()
+        return bool(rows)
+
+    async def claim_due_grants(self, now) -> list[dict]:
+        # PATCH conditionnel : une programmation n'est appliquée qu'une seule fois.
+        try:
+            rows = (await self._request('PATCH', '/nathgpt_role_grants', params={'applied_at': 'is.null', 'grant_at': f'lte.{self._iso(now)}'},
+                                        json={'applied_at': self._iso(now)}, headers={'Prefer': 'return=representation'})).json()
+        except StoreError:  # table absente (schema.sql pas relancé)
+            return []
+        return [{'id': r['id'], 'account_key': r['account_key'], 'role': r['role'], 'grant_at': self._epoch(r['grant_at'])} for r in rows]
+
+    async def list_notices(self, key) -> list[dict]:
+        try:
+            return (await self._request('GET', '/nathgpt_role_grants', params={
+                'select': 'id,role', 'account_key': f'eq.{key}', 'applied_at': 'not.is.null', 'seen_at': 'is.null', 'order': 'applied_at.asc'})).json()
+        except StoreError:
+            return []
+
+    async def mark_notice_seen(self, key, grant_id) -> None:
+        await self._request('PATCH', '/nathgpt_role_grants', params={'id': f'eq.{grant_id}', 'account_key': f'eq.{key}'},
+                            json={'seen_at': self._iso(time.time())}, headers={'Prefer': 'return=minimal'})
 
     async def create_session(self, key) -> str:
         sid = secrets.token_urlsafe(32)
