@@ -37,6 +37,8 @@ IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 PURGE_INTERVAL_SECONDS = 60 * 60
 MEMORY_IMAGES_BYTES = 150 * 1024 * 1024
+HEARTBEAT_SECONDS = 10
+JOB_KEEP_SECONDS = 60 * 60
 LOG = logging.getLogger("nathgpt.site")
 STATIC_FILES = {
     "": "index.html", "index.html": "index.html", "styles.css": "styles.css",
@@ -55,6 +57,51 @@ class Settings:
     supabase_url: str = ""
     supabase_key: str = ""
     cookie_secure: bool = False
+
+
+class ChatJob:
+    """Réponse en cours ou terminée, gardée 1 h pour être récupérée après une coupure."""
+
+    def __init__(self):
+        self.events: list[tuple[str, dict]] = []
+        self.answer = ""
+        self.images: list[dict] = []
+        self.done: dict | None = None
+        self.error: dict | None = None
+        self.finished = False
+        self.finished_at = 0.0
+        self.task: asyncio.Task | None = None
+        self._changed = asyncio.Event()
+
+    def add(self, kind: str, data: dict) -> None:
+        self.events.append((kind, data))
+        if kind == "delta":
+            self.answer += data.get("text", "")
+        elif kind == "replace":
+            self.answer = data.get("text", "")
+        elif kind == "image":
+            self.images.append(data)
+        elif kind == "done":
+            self.done = data
+        elif kind == "error":
+            self.error = data
+        self._changed.set()
+
+    def finish(self) -> None:
+        self.finished = True
+        self.finished_at = time.monotonic()
+        self._changed.set()
+
+    async def wait(self, timeout: float) -> bool:
+        try:
+            await asyncio.wait_for(self._changed.wait(), timeout)
+        except TimeoutError:
+            return False
+        self._changed.clear()
+        return True
+
+    def summary(self) -> dict:
+        return {"finished": self.finished, "answer": self.answer, "images": self.images, "done": self.done, "error": self.error}
 
 
 class RateGate:
@@ -230,6 +277,12 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
 
     app = FastAPI(title="NathGPT", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
     app.state.store = store
+    jobs: dict[tuple[str, str], ChatJob] = {}
+
+    def prune_jobs() -> None:
+        limit = time.monotonic() - JOB_KEEP_SECONDS
+        for job_key in [k for k, job in jobs.items() if job.finished and job.finished_at < limit]:
+            del jobs[job_key]
     # Secours si Supabase Storage refuse l'image : gardée en mémoire (perdue au redémarrage du serveur).
     memory_images: OrderedDict[tuple[str, str], bytes] = OrderedDict()
 
@@ -428,8 +481,14 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(400, detail="Le streaming est obligatoire.")
         if not await store.claim_conversation(account["key"], conversation_id):
             raise HTTPException(403, detail="Cette conversation appartient à un autre compte.")
+        request_id = payload.get("request_id")
+        if request_id is None:
+            request_id = uuid.uuid4().hex
+        if not isinstance(request_id, str) or not CONVERSATION_RE.fullmatch(request_id):
+            raise HTTPException(400, detail="Identifiant de requête invalide.")
         if not client.token:
             raise HTTPException(503, detail="NathGPT API n'est pas configurée sur ce serveur.")
+        prune_jobs()
         await gate.acquire(sid, client_ip(request))
         try:
             http_client, upstream = await client.open_stream(prompt, conversation_id, image=payload.get("mode") == "Image")
@@ -472,16 +531,15 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                 remember_image(account["key"], name, raw)
             return {"url": f"/api/images/{name}", "mime_type": mime_type, "filename": data.get("filename") or name}
 
-        async def event_stream():
-            terminal = False
-            disconnected = False
+        job = ChatJob()
+        jobs[(account["key"], request_id)] = job
+
+        async def produce():
+            """Lit la réponse de l'API jusqu'au bout, même si le navigateur se déconnecte (iPhone en veille…)."""
             answer = ""
             try:
-                async with asyncio.timeout(300):
+                async with asyncio.timeout(360):
                     async for kind, data in client.events(upstream):
-                        if await request.is_disconnected():
-                            disconnected = True
-                            break
                         if kind == "delta":
                             answer += data.get("text", "")
                         elif kind == "replace":
@@ -489,34 +547,57 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                         elif kind == "image":
                             data = await store_image(data)
                             if data is None:
-                                yield encode_sse("error", {"code": "image_error", "message": "L’image a été générée mais n’a pas pu être enregistrée."})
-                                terminal = True
-                                break
+                                job.add("error", {"code": "image_error", "message": "L’image reçue est invalide."})
+                                return
                         elif kind == "done" and answer.strip():
                             data = await record_usage(answer, data)
-                        yield encode_sse(kind, data)
+                        job.add(kind, data)
                         if kind in ("done", "error"):
-                            terminal = True
-                            break
-                if not terminal and not disconnected:
-                    yield encode_sse("done", await record_usage(answer, {}) if answer.strip() else {})
-            except asyncio.CancelledError:
-                raise
+                            return
+                job.add("done", await record_usage(answer, {}) if answer.strip() else {})
             except (TimeoutError, httpx.TimeoutException):
-                if not disconnected:
-                    yield encode_sse("error", {"code": "timeout", "message": "NathGPT a mis trop de temps à répondre."})
+                job.add("error", {"code": "timeout", "message": "NathGPT a mis trop de temps à répondre."})
             except (httpx.HTTPError, SSEProtocolError):
-                if not disconnected:
-                    yield encode_sse("error", {"code": "upstream_error", "message": "Connexion à NathGPT interrompue."})
+                job.add("error", {"code": "upstream_error", "message": "Connexion à NathGPT interrompue."})
+            except Exception:
+                LOG.exception("Réponse NathGPT interrompue")
+                job.add("error", {"code": "upstream_error", "message": "Connexion à NathGPT interrompue."})
             finally:
+                job.finish()
                 await upstream.aclose()
                 await http_client.aclose()
                 await gate.release(sid)
+
+        job.task = asyncio.create_task(produce())
+
+        async def event_stream():
+            # Un commentaire SSE toutes les 10 s : sans lui, Render coupe la connexion pendant
+            # la génération d'une image (1 à 2 min sans texte) et Safari affiche « Load failed ».
+            sent = 0
+            yield b": ok\n\n"
+            while True:
+                while sent < len(job.events):
+                    kind, data = job.events[sent]
+                    sent += 1
+                    yield encode_sse(kind, data)
+                if job.finished:
+                    return
+                if not await job.wait(HEARTBEAT_SECONDS):
+                    yield b": ping\n\n"
 
         return StreamingResponse(
             event_stream(), media_type="text/event-stream",
             headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
         )
+
+    @app.get("/api/chat/result/{request_id}")
+    async def chat_result(request_id: str, request: Request):
+        """Récupère une réponse après une coupure de connexion (la génération a continué sur le serveur)."""
+        account = await current_account(request)
+        job = jobs.get((account["key"], request_id)) if CONVERSATION_RE.fullmatch(request_id) else None
+        if not job:
+            raise HTTPException(404, detail="Réponse introuvable.")
+        return job.summary()
 
     @app.get("/{filename:path}")
     async def static(filename: str):

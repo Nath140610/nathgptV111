@@ -153,13 +153,14 @@ def test_current_json_api_response_is_displayed_without_fake_streaming(tmp_path)
     run(scenario())
 
 
-def test_upstream_stream_closed_after_browser_cancel(tmp_path):
+def test_generation_continues_after_browser_disconnect(tmp_path):
+    """iPhone en veille / « Load failed » : la réponse continue côté serveur et se récupère ensuite."""
     async def scenario():
-        transport, _, streams = mock_transport(chunks=[b'event: delta\ndata: {"text":"B"}\n\n'] * 100)
+        transport, _, streams = mock_transport(chunks=[b'event: delta\ndata: {"text":"B"}\n\n'] * 100 + [b'event: done\ndata: {}\n\n'])
         app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'), transport=transport)
         assert await app.state.store.create_account('alice', 'alice', 'scrypt:1:1:1$x$y')
         sid = await app.state.store.create_session('alice')
-        body = json.dumps({'prompt': 'Salut', 'conversation_id': 'conversation_1', 'stream': True}).encode()
+        body = json.dumps({'prompt': 'Salut', 'conversation_id': 'conversation_1', 'request_id': 'reponse_123', 'stream': True}).encode()
         received = False
 
         async def receive():
@@ -173,9 +174,45 @@ def test_upstream_stream_closed_after_browser_cancel(tmp_path):
         request = Request(scope, receive)
         endpoint = next(route.endpoint for route in app.routes if getattr(route, 'path', '') == '/api/chat')
         response = await endpoint(request)
-        assert b'event: delta' in await anext(response.body_iterator)
-        await response.body_iterator.aclose()
-        assert streams[0].closed
-        assert app.state.gate.global_active == 0
+        assert await anext(response.body_iterator) == b': ok\n\n'
+        await response.body_iterator.aclose()  # le navigateur s'en va
+        for _ in range(200):
+            if app.state.gate.global_active == 0:
+                break
+            await asyncio.sleep(0.01)
+        assert streams[0].closed and app.state.gate.global_active == 0
+
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver', cookies={'nathgpt_backend_sid': sid}) as client:
+            result = (await client.get('/api/chat/result/reponse_123')).json()
+            assert result['finished'] is True and result['answer'] == 'B' * 100 and result['error'] is None
+            assert (await client.get('/api/chat/result/inconnue_1')).status_code == 404
+        assert await app.state.store.create_account('bob', 'bob', 'scrypt:1:1:1$x$y')
+        bob_sid = await app.state.store.create_session('bob')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver', cookies={'nathgpt_backend_sid': bob_sid}) as client:
+            assert (await client.get('/api/chat/result/reponse_123')).status_code == 404
+
+    run(scenario())
+
+
+def test_heartbeat_while_image_is_generating(tmp_path, monkeypatch):
+    """Pendant une longue génération sans texte, le navigateur reçoit des « ping » réguliers."""
+    import server
+
+    monkeypatch.setattr(server, 'HEARTBEAT_SECONDS', 0.05)
+
+    class SlowStream(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            await asyncio.sleep(0.3)
+            yield b'event: delta\ndata: {"text":"fini"}\n\nevent: done\ndata: {}\n\n'
+
+    def upstream(_request):
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, stream=SlowStream())
+
+    async def scenario():
+        async with await site_client(tmp_path, httpx.MockTransport(upstream)) as client:
+            await signup(client)
+            response = await client.post('/api/chat', json={'prompt': 'Salut', 'conversation_id': 'conversation_1', 'stream': True})
+            assert response.text.count(': ping') >= 2
+            assert 'event: done' in response.text
 
     run(scenario())

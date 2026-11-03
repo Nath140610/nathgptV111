@@ -582,15 +582,15 @@
     const controller = new AbortController();
     pendingRequest = controller;
     updateSendButton();
+    let donePayload = {};
     try {
-      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, stream: true, mode: imageTask ? 'Image' : mode }), signal: controller.signal });
+      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, request_id: assistant.id, stream: true, mode: imageTask ? 'Image' : mode }), signal: controller.signal });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
-        throw new Error(serverError(response.status, payload.detail));
+        throw serverFailure(serverError(response.status, payload.detail));
       }
       if (!response.body) throw new Error('Ce navigateur ne prend pas en charge le streaming.');
       let completed = false;
-      let donePayload = {};
       for await (const event of parseSSE(response.body)) {
         let payload;
         try { payload = JSON.parse(event.data); } catch { continue; }
@@ -601,7 +601,7 @@
           if (updated.id === activeId) renderWorkspace();
           continue;
         }
-        else if (event.event === 'error') throw new Error(serverError(502, payload.message));
+        else if (event.event === 'error') throw serverFailure(serverError(502, payload.message));
         else if (event.event === 'done') {
           donePayload = payload || {};
           completed = true;
@@ -611,17 +611,61 @@
         updateAssistant(updated, assistant);
       }
       if (!completed) throw new Error('La réponse a été interrompue.');
-      const imageCount = safeImages(assistant).length;
-      if (!displayAssistantContent(assistant.content).trim() && !imageCount) throw new Error('NathGPT a renvoyé une réponse vide.');
-      recordUsage(accountKey, content, assistant.content, donePayload);
-      notifyIfHidden(imageCount ? 'Ton image est prête' : 'Réponse de NathGPT', imageCount ? title : displayAssistantContent(assistant.content).replace(/\s+/g, ' ').slice(0, 140), id);
+      await finishReply();
     } catch (error) {
-      assistant.error = error.name === 'AbortError' ? 'Réponse arrêtée.' : (error.message || 'Connexion interrompue.');
+      if (error.name === 'AbortError') assistant.error = 'Réponse arrêtée.';
+      else if (error.fromServer) assistant.error = error.message;
+      else {
+        // Connexion coupée (« Load failed », app en arrière-plan…) : le serveur a continué, on récupère la réponse.
+        try {
+          const result = await recoverReply(assistant.id, controller.signal, (partial) => applyResult(partial));
+          if (!result) throw error;
+          applyResult(result);
+          if (result.error) throw serverFailure(serverError(502, result.error.message));
+          donePayload = result.done || {};
+          await finishReply();
+        } catch (failure) {
+          assistant.error = failure.name === 'AbortError' ? 'Réponse arrêtée.' : (failure.message || 'Connexion interrompue.');
+        }
+      }
     } finally {
       assistant.state = 'done';
       pendingRequest = null;
       saveChats(updated.id); updateAssistant(updated, assistant); updateSendButton();
     }
+    function applyResult(result) {
+      assistant.content = String(result.answer || '');
+      assistant.images = safeImages({ images: (result.images || []).map((image) => ({ url: String(image?.url || ''), filename: String(image?.filename || '') })) });
+      if (updated.id === activeId) renderWorkspace();
+    }
+    async function finishReply() {
+      const imageCount = safeImages(assistant).length;
+      if (!displayAssistantContent(assistant.content).trim() && !imageCount) throw serverFailure('NathGPT a renvoyé une réponse vide.');
+      recordUsage(accountKey, content, assistant.content, donePayload);
+      notifyIfHidden(imageCount ? 'Ton image est prête' : 'Réponse de NathGPT', imageCount ? title : displayAssistantContent(assistant.content).replace(/\s+/g, ' ').slice(0, 140), id);
+    }
+  }
+  function serverFailure(message) {
+    const error = new Error(message);
+    error.fromServer = true;
+    return error;
+  }
+  // Interroge le serveur jusqu'à la fin de la réponse (6 min max). null si le serveur ne la connaît pas.
+  async function recoverReply(requestId, signal, onPartial) {
+    const deadline = Date.now() + 6 * 60 * 1000;
+    while (Date.now() < deadline) {
+      if (signal.aborted) throw new DOMException('Réponse arrêtée.', 'AbortError');
+      try {
+        const result = await api(`/api/chat/result/${encodeURIComponent(requestId)}`);
+        if (result.finished) return result;
+        onPartial(result);
+      } catch (error) {
+        if (error.status === 404 || error.status === 401) return null;
+        /* réseau encore coupé (app en veille) : on réessaie */
+      }
+      await wait(2500);
+    }
+    return null;
   }
   function showVoiceError(message) {
     $('voice-error').textContent = message;
