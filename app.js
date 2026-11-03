@@ -1141,25 +1141,72 @@
   let cricutPreviousPhase = '';
   let cricutTypeTimer = 0;
   let cricutSaid = '';
-  const calculatorSvg = () => {
-    const keys = [];
-    for (let row = 0; row < 4; row += 1) {
-      for (let col = 0; col < 3; col += 1) {
-        keys.push(`<rect class="calc-key k${row * 3 + col}" x="${6 + col * 10}" y="${21 + row * 7.4}" width="8" height="5.4" rx="1.8" fill="${col === 2 ? '#ff9f43' : '#4a5163'}"/>`);
-      }
-    }
-    return `<svg class="prop-calc" viewBox="0 0 40 52"><rect x="1" y="1" width="38" height="50" rx="7" fill="#2d3340" stroke="#596276" stroke-width="1.5"/><rect x="5" y="5" width="30" height="12" rx="3" fill="#bdf7c9"/><text id="cricut-calc" x="32.5" y="14.6" text-anchor="end" font-size="9" font-weight="700" font-family="ui-monospace,Menlo,monospace" fill="#1d4d2b">0</text>${keys.join('')}</svg>`;
-  };
-  const scissorsSvg = '<svg class="prop-scissors" viewBox="0 0 44 44"><g class="blade blade-a"><path d="M22 22 41 13" stroke="#e3e7ef" stroke-width="3.4" stroke-linecap="round"/><path d="M22 22 14 26" stroke="#ff6b8b" stroke-width="3.4" stroke-linecap="round"/><circle cx="9" cy="28.5" r="5.6" fill="none" stroke="#ff6b8b" stroke-width="3.2"/></g><g class="blade blade-b"><path d="M22 22 41 31" stroke="#e3e7ef" stroke-width="3.4" stroke-linecap="round"/><path d="M22 22 14 18" stroke="#ff6b8b" stroke-width="3.4" stroke-linecap="round"/><circle cx="9" cy="15.5" r="5.6" fill="none" stroke="#ff6b8b" stroke-width="3.2"/></g><circle cx="22" cy="22" r="2.1" fill="#fff"/></svg>';
-  const pencilSvg = '<svg class="prop-pencil" viewBox="0 0 44 44"><g transform="rotate(-38 22 22)"><rect x="8" y="17" width="24" height="10" rx="1.5" fill="#ffd166"/><rect x="8" y="17" width="24" height="3.3" fill="#ffe29a"/><rect x="3" y="17" width="6" height="10" rx="2" fill="#ff8fab"/><rect x="8.5" y="17" width="2.5" height="10" fill="#c9ced8"/><path d="M32 17 41 22 32 27Z" fill="#f4d9b0"/><path d="M38 20.3 41 22 38 23.7Z" fill="#333"/></g></svg>';
-  const hourglassSvg = '<svg class="prop-hourglass" viewBox="0 0 30 40"><path d="M5 3h20M5 37h20" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round"/><path d="M7 4c0 9 8 11 8 16s-8 7-8 16h16c0-9-8-11-8-16s8-7 8-16Z" fill="#ffffff14" stroke="#c4b5fd" stroke-width="1.6"/><path class="sand-top" d="M10 9h10c-1 4-4 6-5 8-1-2-4-4-5-8Z" fill="#ffd166"/><path class="sand-bottom" d="M9 35c1-5 4-7 6-9 2 2 5 4 6 9Z" fill="#ffd166"/></svg>';
+  // Accessoires en vraie 3D (CSS 3D) : chaque objet est construit avec des faces placées dans l'espace.
+  const f3 = (style, cls = '', inner = '') => `<i class="f3${cls ? ` ${cls}` : ''}" style="${style}">${inner}</i>`;
+  // Prisme (ou pointe en pyramide) couché le long de l'axe X, à partir de x = from.
+  function prism3d({ sides, radius, from, length, colors, tip = false }) {
+    const step = 360 / sides;
+    const apothem = radius * Math.cos(Math.PI / sides);
+    const side = 2 * radius * Math.sin(Math.PI / sides);
+    const width = tip ? Math.hypot(length, apothem) : length;
+    const slope = tip ? Math.atan2(apothem, length) * 180 / Math.PI : 0;
+    return Array.from({ length: sides }, (_, index) => f3(
+      `left:${from}px;width:${width.toFixed(2)}px;height:${side.toFixed(2)}px;margin-top:${(-side / 2).toFixed(2)}px;background:${colors[index % colors.length]};transform:rotateX(${index * step}deg) translateZ(${apothem.toFixed(2)}px)${tip ? ` rotateY(${slope.toFixed(2)}deg)` : ''}`,
+      `prism-face${tip ? ' is-tip' : ''}`)).join('');
+  }
+  function pencil3d() {
+    const radius = 4.6;
+    const wood = 'linear-gradient(90deg,#f6dcb4 0 66%,#2f3038 66%)';
+    return `<div class="p3d pencil3d"><div class="p3d pencil-roll">
+      ${prism3d({ sides: 6, radius, from: 0, length: 6, colors: ['#ff9db5', '#f07a98', '#c95272', '#a83d5c', '#d9607f', '#ffb3c6'] })}
+      ${prism3d({ sides: 6, radius, from: 6, length: 4, colors: ['#eef1f6', '#c9ced8', '#9aa1ae', '#7f8794', '#b3bac6', '#ffffff'] })}
+      ${prism3d({ sides: 6, radius, from: 10, length: 24, colors: ['#ffd84d', '#ffc933', '#e0a91f', '#b8860b', '#d39b17', '#ffe27a'] })}
+      ${prism3d({ sides: 6, radius, from: 34, length: 11, colors: [wood, wood, wood, wood, wood, wood], tip: true })}
+      ${f3(`width:${radius * 2}px;height:${radius * 2}px;left:${-radius}px;top:${-radius}px;transform:rotateY(90deg)`, 'pencil-cap')}
+    </div></div>`;
+  }
+  function calculator3d() {
+    const [w, h, d] = [34, 46, 7];
+    const keys = Array.from({ length: 12 }, (_, index) => `<b class="ck k${index}${index % 3 === 2 ? ' is-op' : ''}"></b>`).join('');
+    const box = (width, height, transform, cls, inner = '') => f3(`width:${width}px;height:${height}px;left:${-width / 2}px;top:${-height / 2}px;transform:${transform}`, cls, inner);
+    return `<div class="p3d calc3d"><div class="p3d calc-body">
+      ${box(w, h, `translateZ(${d / 2}px)`, 'calc-front', `<span class="calc-screen"><span id="cricut-calc">0</span></span><span class="calc-keys">${keys}</span>`)}
+      ${box(w, h, `rotateY(180deg) translateZ(${d / 2}px)`, 'calc-back')}
+      ${box(d, h, `rotateY(90deg) translateZ(${w / 2}px)`, 'calc-side')}
+      ${box(d, h, `rotateY(-90deg) translateZ(${w / 2}px)`, 'calc-side is-dark')}
+      ${box(w, d, `rotateX(90deg) translateZ(${h / 2}px)`, 'calc-side is-light')}
+      ${box(w, d, `rotateX(-90deg) translateZ(${h / 2}px)`, 'calc-side is-dark')}
+    </div></div>`;
+  }
+  function scissors3d() {
+    // Chaque lame est faite de 4 couches empilées en profondeur : de l'épaisseur quand elle tourne.
+    const blade = (tipY, handleY, ringY) => [-1.6, -0.5, 0.6, 1.6].map((z, layer) => {
+      const steel = ['#6f7686', '#a2a9b6', '#c9ced8', '#f4f6fa'][layer];
+      const handle = ['#8f2742', '#c93d61', '#ff6b8b', '#ff9fb6'][layer];
+      return `<svg class="sc-layer" viewBox="0 0 44 44" style="transform:translateZ(${z}px)"><path d="M22 22 41 ${tipY}" stroke="${steel}" stroke-width="3.4" stroke-linecap="round"/><path d="M22 22 14 ${handleY}" stroke="${handle}" stroke-width="3.6" stroke-linecap="round"/><circle cx="9" cy="${ringY}" r="5.6" fill="none" stroke="${handle}" stroke-width="3.2"/></svg>`;
+    }).join('');
+    return `<div class="p3d sc3d"><div class="p3d sc-blade blade-a">${blade(13, 26, 28.5)}</div><div class="p3d sc-blade blade-b">${blade(31, 18, 15.5)}</div>${f3('', 'sc-pivot')}</div>`;
+  }
+  function hourglass3d() {
+    const plane = (angle) => `<svg class="hg-plane" viewBox="0 0 30 40" style="transform:rotateY(${angle}deg)"><path d="M7 4c0 9 8 11 8 16s-8 7-8 16h16c0-9-8-11-8-16s8-7 8-16Z" fill="#c4b5fd1c" stroke="#c4b5fd" stroke-width="1"/><path class="sand-top" d="M10 9h10c-1 4-4 6-5 8-1-2-4-4-5-8Z" fill="#ffd166"/><path class="sand-bottom" d="M9 35c1-5 4-7 6-9 2 2 5 4 6 9Z" fill="#ffd166"/></svg>`;
+    const disc = (y) => f3(`width:22px;height:22px;left:-11px;top:${y - 11}px;transform:rotateX(90deg)`, 'hg-disc');
+    return `<div class="p3d hg3d"><div class="p3d hg-spin">${[0, 60, 120].map(plane).join('')}${disc(-18.5)}${disc(18.5)}</div></div>`;
+  }
+  function cube3d(size, cls, faces) {
+    const half = size / 2;
+    const turns = ['', 'rotateY(180deg)', 'rotateY(90deg)', 'rotateY(-90deg)', 'rotateX(90deg)', 'rotateX(-90deg)'];
+    return `<div class="p3d ${cls}"><div class="p3d cube-spin">${turns.map((turn, index) => f3(`width:${size}px;height:${size}px;left:${-half}px;top:${-half}px;transform:${turn} translateZ(${half}px)`, `cube-face c${index}`, faces[index] || '')).join('')}</div></div>`;
+  }
+  // Symbole en relief (cœur, étoile, Z) : plusieurs copies décalées en profondeur.
+  const glyph3d = (char, cls, front, back, delay = 0) => `<span class="p3d g3d ${cls}" style="--d:${delay}s"><span class="p3d g-spin">${[-2.4, -1.6, -0.8, 0].map((z, layer) => `<b style="transform:translate(-50%,-50%) translateZ(${z}px);color:${layer === 3 ? front : back}">${char}</b>`).join('')}</span></span>`;
   const thought = (content, extra = '') => `<div class="prop-think ${extra}"><i class="think-dot d1"></i><i class="think-dot d2"></i><div class="think-cloud">${content}</div></div>`;
+  const shadow = (cls) => `<i class="prop-shadow ${cls}"></i>`;
   function confetti(count) {
     const colors = ['#ff6b8b', '#ffd166', '#7dd3fc', '#a78bfa', '#30d158', '#ff9f43'];
     return Array.from({ length: count }, (_, index) => {
       const angle = (index / count) * Math.PI * 2 + Math.random() * 0.5;
       const distance = 38 + Math.random() * 34;
-      return `<i class="confetto" style="--x:${Math.cos(angle) * distance}px;--y:${Math.sin(angle) * distance - 18}px;--r:${Math.round(Math.random() * 540)}deg;--d:${(Math.random() * 0.25).toFixed(2)}s;background:${colors[index % colors.length]}"></i>`;
+      return `<i class="confetto" style="--x:${Math.cos(angle) * distance}px;--y:${Math.sin(angle) * distance - 18}px;--r:${Math.round(360 + Math.random() * 720)}deg;--d:${(Math.random() * 0.25).toFixed(2)}s;background:${colors[index % colors.length]}"></i>`;
     }).join('');
   }
   function cricutMood(job) {
@@ -1168,18 +1215,19 @@
     if (job.phase === 'stickers') return { key: `stickers:${job.current}`, look: 'stickers', current: job.current };
     return { key: job.phase, look: job.phase };
   }
+  const sparkles3d = () => glyph3d('✦', 'sparkle s1', '#ffd166', '#b07a00') + glyph3d('✦', 'sparkle s2', '#c4b5fd', '#5b21b6', 0.6) + glyph3d('✧', 'sparkle s3', '#7dd3fc', '#0369a1', 1.1);
   function cricutPropsHtml(mood) {
     switch (mood.key.split(':')[0]) {
-      case 'idle': return '<i class="sparkle s1">✦</i><i class="sparkle s2">✦</i><i class="sparkle s3">✧</i>';
-      case 'ready': return '<i class="heart h1">♥</i><i class="heart h2">♥</i><i class="heart h3">♥</i>';
-      case 'waiting': return `${hourglassSvg}${thought('<span class="think-dots"><b>.</b><b>.</b><b>.</b></span>')}`;
-      case 'numbering': return `${pencilSvg}${thought('<span class="think-numbers"><b>1</b><b>2</b><b>3</b></span>')}`;
-      case 'counting': return `${calculatorSvg()}${thought('<span class="think-q">?</span>', 'is-small')}`;
-      case 'counted': return `${calculatorSvg()}<i class="calc-pop">= ${mood.total}</i>`;
-      case 'stickers': return `${scissorsSvg}<i class="paper p1"></i><i class="paper p2"></i><i class="paper p3"></i>${thought(`<span class="think-sticker">n°${mood.current}</span>`)}`;
-      case 'finished': return `<div class="confetti">${confetti(18)}</div><i class="sparkle s1">✦</i><i class="sparkle s2">✧</i>`;
-      case 'error': return '<svg class="prop-puff" viewBox="0 0 44 32"><path d="M10 26a8 8 0 0 1 0-16 10 10 0 0 1 19-3 8 8 0 0 1 6 19Z" fill="#3a3d48" stroke="#5c6070" stroke-width="1.4"/><text x="22" y="22" text-anchor="middle" font-size="13" font-weight="800" fill="#ff8a8a">!</text></svg>';
-      case 'deleted': return '<i class="zzz z1">z</i><i class="zzz z2">z</i><i class="zzz z3">Z</i>';
+      case 'idle': return sparkles3d();
+      case 'ready': return glyph3d('♥', 'heart h1', '#ff6b8b', '#9f1239') + glyph3d('♥', 'heart h2', '#ff8fab', '#9f1239', 0.7) + glyph3d('♥', 'heart h3', '#ff6b8b', '#9f1239', 1.3);
+      case 'waiting': return `${shadow('under-hg')}${hourglass3d()}${thought('<span class="think-dots"><b>.</b><b>.</b><b>.</b></span>')}`;
+      case 'numbering': return `${shadow('under-pencil')}${pencil3d()}${thought('<span class="think-numbers"><b>1</b><b>2</b><b>3</b></span>')}`;
+      case 'counting': return `${shadow('under-calc')}${calculator3d()}${thought('<span class="think-q">?</span>', 'is-small')}`;
+      case 'counted': return `${shadow('under-calc')}${calculator3d()}<i class="calc-pop">= ${mood.total}</i>`;
+      case 'stickers': return `${shadow('under-sc')}${scissors3d()}<i class="paper p1"></i><i class="paper p2"></i><i class="paper p3"></i>${thought(`<span class="think-sticker">n°${mood.current}</span>`)}`;
+      case 'finished': return `<div class="confetti">${confetti(18)}</div>${sparkles3d()}`;
+      case 'error': return `${shadow('under-err')}${cube3d(20, 'err3d', ['!', '!', '!', '!', '', ''])}`;
+      case 'deleted': return glyph3d('z', 'zzz z1', '#c4b5fd', '#4c1d95') + glyph3d('z', 'zzz z2', '#c4b5fd', '#4c1d95', 0.8) + glyph3d('Z', 'zzz z3', '#ddd6fe', '#4c1d95', 1.6);
       default: return '';
     }
   }
@@ -1376,8 +1424,142 @@
     $('cricut-drop-text').hidden = true;
     renderCricut();
   });
+  // Envoi à la VM : Cricutastrophe sort de sa case, attrape la planche, l'emporte en haut de l'écran
+  // et la lance vers la VM, où elle se décompose en 0 et 1 (aux couleurs de l'image).
+  async function playCricutLaunch() {
+    const preview = $('cricut-preview');
+    if (!preview.src || preview.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const image = new Image();
+    image.src = preview.src;
+    try { await image.decode(); } catch { return; }
+    const wrap = $('cricut-bot-wrap');
+    wrap.scrollIntoView({ block: 'nearest' });
+    const botBox = $('cricut-bot').getBoundingClientRect();
+    const photoBox = preview.getBoundingClientRect();
+    if (!botBox.width || !photoBox.width) return;
+
+    const at = (x, y, extra = '') => `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%) ${extra}`;
+    const ratio = image.naturalHeight / image.naturalWidth || 1;
+    const cardW = 76;
+    const cardH = Math.round(Math.min(100, Math.max(46, cardW * ratio)));
+    const start = { x: botBox.left + botBox.width / 2, y: botBox.top + botBox.height / 2 };
+    const hop = { x: start.x, y: start.y - 30 };
+    const hold = 38 + cardH / 2;  // la planche est tenue au-dessus de sa tête
+    const sky = { x: innerWidth / 2, y: cardH * 0.6 + 84 };  // tout en haut : là où la planche se décompose
+    // Il descend au milieu de l'écran pour prendre son élan, puis lance la planche vers le haut.
+    const top = { x: innerWidth / 2, y: Math.max(sky.y + hold + 120, innerHeight * 0.6) };
+    const middle = { x: Math.min(innerWidth - 60, (start.x + top.x) / 2 + 70), y: (hop.y + top.y) / 2 - 20 };
+    const total = 3200;
+
+    const layer = document.createElement('div');
+    layer.className = 'cricut-launch';
+    layer.innerHTML = '<div class="launch-vm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg><span>VM NathGPT</span></div>';
+    const card = document.createElement('div');
+    card.className = 'launch-card';
+    card.style.cssText = `width:${cardW}px;height:${cardH}px`;
+    card.append(image);
+    const flyer = document.createElement('div');
+    flyer.className = 'launch-flyer';
+    // Le bot est dessiné dans un canvas : on fait voler le vrai (une copie serait vide), puis il retourne dans sa case.
+    const bot = $('cricut-bot');
+    flyer.append(bot);
+    layer.append(card, flyer);
+    document.body.append(layer);
+    wrap.classList.add('is-away');
+    preview.classList.add('is-taken');
+
+    const scale0 = Math.min(photoBox.width / cardW, photoBox.height / cardH);
+    flyer.animate([
+      { offset: 0, transform: at(start.x, start.y) },
+      { offset: 0.06, transform: at(start.x, start.y + 4, 'scale(1.12,.86)') },
+      { offset: 0.14, transform: at(hop.x, hop.y - 8, 'scale(.94,1.08)') },
+      { offset: 0.21, transform: at(hop.x, hop.y) },
+      { offset: 0.36, transform: at(middle.x, middle.y, 'rotate(8deg)') },
+      { offset: 0.52, transform: at(top.x, top.y, 'rotate(-5deg)') },
+      { offset: 0.57, transform: at(top.x, top.y + 10, 'scale(1.1,.88)') },
+      { offset: 0.62, transform: at(top.x, top.y - 16, 'scale(.94,1.08)') },
+      { offset: 0.68, transform: at(top.x, top.y) },
+      { offset: 0.93, transform: at(start.x, start.y, 'rotate(-6deg)') },
+      { offset: 0.97, transform: at(start.x, start.y + 3, 'scale(1.08,.92)') },
+      { offset: 1, transform: at(start.x, start.y) },
+    ], { duration: total, easing: 'ease-in-out', fill: 'both' });
+    card.animate([
+      { offset: 0, transform: at(photoBox.left + photoBox.width / 2, photoBox.top + photoBox.height / 2, `scale(${scale0.toFixed(3)})`) },
+      { offset: 0.21, transform: at(hop.x, hop.y - hold, 'rotate(-4deg)') },
+      { offset: 0.36, transform: at(middle.x, middle.y - hold, 'rotate(6deg)') },
+      { offset: 0.52, transform: at(top.x, top.y - hold, 'rotate(-3deg)') },
+      { offset: 0.57, transform: at(top.x, top.y + 10 - hold, 'rotate(0)') },
+      { offset: 0.62, transform: at(top.x, top.y - 16 - hold, 'rotate(0)') },
+      { offset: 0.7, transform: at(sky.x, sky.y, 'scale(1.15) rotate(-6deg)'), easing: 'ease-out' },
+      { offset: 1, transform: at(sky.x, sky.y, 'scale(1.15) rotate(0)') },
+    ], { duration: total, easing: 'ease-in-out', fill: 'both' });
+    card.animate([{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.71 }, { opacity: 0, offset: 0.76 }, { opacity: 0, offset: 1 }], { duration: total, fill: 'both' });
+
+    // Décomposition en binaire : une grille de 0/1, chaque chiffre a la couleur de son morceau d'image.
+    setTimeout(() => {
+      const cols = 16;
+      const rows = Math.max(8, Math.min(22, Math.round(cols * cardH / cardW)));
+      const canvas = document.createElement('canvas');
+      canvas.width = cols; canvas.height = rows;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      context.drawImage(image, 0, 0, cols, rows);
+      let pixels = null;
+      try { pixels = context.getImageData(0, 0, cols, rows).data; } catch { /* image illisible : chiffres violets */ }
+      const w = cardW * 1.15, h = cardH * 1.15;
+      const cellW = w / cols, cellH = h / rows;
+      const vm = layer.querySelector('.launch-vm').getBoundingClientRect();
+      const target = { x: vm.left + vm.width / 2, y: vm.top + vm.height / 2 };
+      const bits = [];
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const bit = document.createElement('i');
+          bit.className = 'launch-bit';
+          bit.textContent = Math.random() < 0.5 ? '0' : '1';
+          let color = '#c4b5fd';
+          if (pixels) {
+            const k = (row * cols + col) * 4;
+            let [r, g, b] = [pixels[k], pixels[k + 1], pixels[k + 2]];
+            const light = 0.299 * r + 0.587 * g + 0.114 * b;
+            if (light < 90) [r, g, b] = [r, g, b].map((v, i) => Math.round(v + ([196, 181, 253][i] - v) * 0.55));  // trop sombre sur fond noir
+            color = `rgb(${r},${g},${b})`;
+          }
+          bit.style.cssText = `color:${color};font-size:${Math.max(8, Math.min(cellW, cellH) * 1.35).toFixed(1)}px`;
+          const x = sky.x - w / 2 + (col + 0.5) * cellW;
+          const y = sky.y - h / 2 + (row + 0.5) * cellH;
+          const tx = target.x + (Math.random() - 0.5) * 70;
+          const ty = target.y + (Math.random() - 0.5) * 14;
+          const driftX = x + (x - sky.x) * 0.8 + (Math.random() - 0.5) * 30;  // la planche « explose » un peu
+          const driftY = y + (y - sky.y) * 0.8 + 8 + Math.random() * 16;
+          bit.animate([
+            { transform: at(x, y, 'scale(.3)'), opacity: 0 },
+            { offset: 0.12, transform: at(x, y, 'scale(1)'), opacity: 1 },
+            { offset: 0.4, transform: at(driftX, driftY, `rotate(${Math.round((Math.random() - 0.5) * 90)}deg)`), opacity: 1 },
+            { transform: at(tx, ty, `rotate(${Math.round((Math.random() - 0.5) * 360)}deg) scale(.5)`), opacity: 0 },
+          ], { duration: 1050 + Math.random() * 450, delay: (rows - row) * 28 + Math.random() * 120, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'both' });
+          bits.push(bit);
+        }
+      }
+      layer.append(...bits);
+      const flicker = setInterval(() => { for (const bit of bits) if (Math.random() < 0.2) bit.textContent = bit.textContent === '0' ? '1' : '0'; }, 90);
+      setTimeout(() => layer.querySelector('.launch-vm')?.classList.add('is-hit'), 1000);
+      setTimeout(() => clearInterval(flicker), 1900);
+    }, total * 0.7);
+
+    await new Promise((resolve) => setTimeout(resolve, total + 150));
+    wrap.prepend(bot);
+    wrap.classList.remove('is-away');
+    preview.classList.remove('is-taken');
+    layer.classList.add('is-leaving');
+    setTimeout(() => layer.remove(), 400);
+  }
   $('cricut-start').addEventListener('click', async () => {
     if (!cricutFile) return;
+    playCricutLaunch().catch(() => {
+      if (!$('cricut-bot-wrap').contains($('cricut-bot'))) $('cricut-bot-wrap').prepend($('cricut-bot'));
+      $('cricut-bot-wrap').classList.remove('is-away');
+      $('cricut-preview').classList.remove('is-taken');
+      document.querySelector('.cricut-launch')?.remove();
+    });
     $('cricut-start').disabled = true;
     cricutNote = 'J’envoie ta planche à la VM…';
     renderCricut();

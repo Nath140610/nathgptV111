@@ -401,25 +401,76 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .cricut-secondary{display:inline-flex;align-items:center;justify-content:center;flex:1 1 100%;height:44px;border:1px solid #ffffff1f;border-radius:14px;background:#1f2026;color:#f2f2f5;font-size:14px;font-weight:600;text-decoration:none}
 .cricut-actions button.cricut-primary{flex:1 1 100%;height:48px;border:0;background:#f2f2f5;color:#0b0c10;font-size:15px;font-weight:650}
 
-/* Cricutastrophe : accessoires animés selon l'étape */
-.cricut-bot-wrap{position:relative;flex:none;width:96px;height:96px;display:grid;place-items:center}
+/* Cricutastrophe : accessoires en 3D (CSS 3D) selon l'étape */
+.cricut-hero{padding-top:26px}
+.cricut-bot-wrap{position:relative;z-index:2;flex:none;width:96px;height:96px;display:grid;place-items:center}
 .cricut-bot-wrap.is-shaking .cricut-bot{animation:cricut-shake .5s ease-in-out 3}
-.cricut-props{position:absolute;inset:0;pointer-events:none}
+.cricut-props{position:absolute;inset:0;pointer-events:none;perspective:240px;transform-style:preserve-3d}
 .cricut-props>*{position:absolute}
-.prop-calc{right:-10px;bottom:-6px;width:36px;transform:rotate(-10deg);animation:prop-bob 1.6s ease-in-out infinite;filter:drop-shadow(0 4px 6px #0008)}
-.calc-key{animation:calc-press 1.2s steps(1) infinite}
-.calc-key.k1{animation-delay:.15s}.calc-key.k3{animation-delay:.35s}.calc-key.k5{animation-delay:.5s}.calc-key.k7{animation-delay:.7s}.calc-key.k8{animation-delay:.85s}.calc-key.k10{animation-delay:1s}
-.calc-pop{right:-30px;top:6px;padding:3px 8px;border-radius:10px;background:#30d158;color:#04140a;font:800 14px/1.2 ui-monospace,Menlo,monospace;font-style:normal;animation:calc-pop .5s cubic-bezier(.3,1.6,.5,1) both}
-.prop-scissors{right:-14px;bottom:2px;width:38px;filter:drop-shadow(0 3px 5px #0008);animation:prop-slide 2.4s ease-in-out infinite}
-.blade{transform-box:view-box;transform-origin:22px 22px}
-.blade-a{animation:snip-a .42s ease-in-out infinite alternate}
-.blade-b{animation:snip-b .42s ease-in-out infinite alternate}
-.paper{bottom:2px;right:6px;width:6px;height:4px;border-radius:1px;background:#ffd166;opacity:0;animation:paper-fall 1.3s ease-in infinite}
-.paper.p2{background:#7dd3fc;animation-delay:.45s;right:14px}.paper.p3{background:#ff8fab;animation-delay:.9s;right:-2px}
-.prop-pencil{right:-12px;bottom:0;width:36px;animation:pencil-write .9s ease-in-out infinite;filter:drop-shadow(0 3px 5px #0008)}
-.prop-hourglass{right:-6px;bottom:2px;width:24px;animation:hourglass-flip 2.4s ease-in-out infinite}
-.sand-top{animation:sand-top 2.4s linear infinite}.sand-bottom{animation:sand-bottom 2.4s linear infinite}
-.prop-think{right:-20px;top:-16px;animation:think-in .4s ease-out both}
+/* Briques 3D : point d'ancrage sans taille + faces placées dans l'espace */
+.p3d{position:absolute;width:0;height:0;transform-style:preserve-3d}
+.f3{position:absolute;display:block;top:0;left:0;transform-origin:50% 50%}
+.f3.prism-face{transform-origin:0 50%}
+.f3.is-tip{clip-path:polygon(0 0,100% 50%,0 100%)}
+.prop-shadow{width:38px;height:8px;border-radius:50%;background:radial-gradient(closest-side,#000b,transparent);animation:shadow-breathe 1.6s ease-in-out infinite}
+.prop-shadow.under-pencil{right:-14px;bottom:2px}
+.prop-shadow.under-calc{right:-16px;bottom:-2px}
+.prop-shadow.under-sc{right:-16px;bottom:4px}
+.prop-shadow.under-hg{right:-6px;bottom:6px;width:28px}
+.prop-shadow.under-err{right:-8px;top:30px;width:24px}
+/* Crayon : prisme hexagonal + virole + gomme + pointe taillée, qui roule sur lui-même */
+.pencil3d{right:6px;bottom:24px;animation:pencil3d-write 1.1s ease-in-out infinite}
+.pencil-roll{animation:pencil3d-roll 3s linear infinite}
+.pencil-cap{background:#d9607f;clip-path:polygon(50% 0,93.3% 25%,93.3% 75%,50% 100%,6.7% 75%,6.7% 25%)}
+/* Calculatrice : vraie boîte avec épaisseur, touches qui s'enfoncent */
+.calc3d{right:2px;bottom:28px;animation:calc3d-turn 3.2s ease-in-out infinite}
+.calc-body{animation:prop-bob3d 1.6s ease-in-out infinite}
+.calc-front{display:flex;flex-direction:column;gap:3px;padding:4px;box-sizing:border-box;border-radius:5px;background:linear-gradient(160deg,#444c60,#232833);box-shadow:inset 0 0 0 1px #6b7590}
+.calc-back{border-radius:5px;background:#1d2129}
+.calc-side{background:#2b313d}.calc-side.is-light{background:#566078}.calc-side.is-dark{background:#15181e}
+.calc-screen{display:block;height:11px;padding:0 3px;border-radius:2px;background:linear-gradient(#cdfdd7,#9fe9ae);color:#1d4d2b;font:800 8.5px/11px ui-monospace,Menlo,monospace;font-style:normal;text-align:right;box-shadow:inset 0 1px 2px #0006}
+.calc-keys{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;flex:1}
+.ck{display:block;border-radius:1.5px;background:#5a647a;box-shadow:0 1.4px 0 #171a21;animation:ck-press 1.2s steps(1) infinite}
+.ck.is-op{background:#ff9f43;box-shadow:0 1.4px 0 #9a520e}
+.ck.k1{animation-delay:.15s}.ck.k3{animation-delay:.35s}.ck.k5{animation-delay:.5s}.ck.k7{animation-delay:.7s}.ck.k8{animation-delay:.85s}.ck.k10{animation-delay:1s}
+.ck:not(.k1):not(.k3):not(.k5):not(.k7):not(.k8):not(.k10){animation:none}
+.calc-pop{left:2px;top:-18px;padding:3px 8px;border-radius:10px;background:#30d158;color:#04140a;font:800 14px/1.2 ui-monospace,Menlo,monospace;font-style:normal;box-shadow:0 3px 0 #1a8a3a,0 8px 16px #0008;animation:calc-pop .55s cubic-bezier(.3,1.6,.5,1) both}
+/* Ciseaux : lames épaisses (4 couches) qui coupent en tournant dans l'espace */
+.sc3d{right:6px;bottom:30px;animation:sc3d-turn 2.6s ease-in-out infinite}
+.p3d.sc-blade{width:40px;height:40px;left:-20px;top:-20px;transform-origin:50% 50%}
+.sc-layer{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+.sc-blade.blade-a{animation:snip3d-a .42s ease-in-out infinite alternate}
+.sc-blade.blade-b{animation:snip3d-b .42s ease-in-out infinite alternate}
+.sc-pivot{width:4px;height:4px;left:-2px;top:-2px;border-radius:50%;background:#fff;transform:translateZ(2.4px)}
+.paper{bottom:4px;right:8px;width:7px;height:5px;border-radius:1px;background:#ffd166;opacity:0;animation:paper-fall 1.3s ease-in infinite}
+.paper.p2{background:#7dd3fc;animation-delay:.45s;right:16px}.paper.p3{background:#ff8fab;animation-delay:.9s;right:0}
+/* Sablier : plans de verre croisés + socles, qui tourne et se retourne */
+.hg3d{right:10px;bottom:34px;animation:hg3d-flip 2.4s ease-in-out infinite}
+.hg-spin{animation:hg3d-spin 4s linear infinite}
+.hg-plane{position:absolute;width:30px;height:40px;left:-15px;top:-20px;overflow:visible}
+.hg-disc{border-radius:50%;background:radial-gradient(circle at 40% 35%,#ede9fe,#7c3aed 70%);box-shadow:0 0 0 1px #4c1d95}
+.sand-top{transform-box:fill-box;transform-origin:50% 100%;animation:sand-top 2.4s linear infinite}
+.sand-bottom{animation:sand-bottom 2.4s linear infinite}
+/* Erreur : cube rouge « ! » qui culbute */
+.err3d{right:4px;top:6px;animation:err3d-bob 1.6s ease-in-out infinite}
+.cube-spin{animation:cube-tumble 3.2s linear infinite}
+.cube-face{display:grid;place-items:center;border-radius:4px;background:linear-gradient(145deg,#ff9a9a,#d63a3a);color:#fff;font:900 13px/1 system-ui,sans-serif;font-style:normal;box-shadow:inset 0 0 0 1.5px #ffffff55}
+.cube-face.c4,.cube-face.c5{background:linear-gradient(145deg,#c43c3c,#8f2323)}
+/* Cœurs, étoiles et Z en relief qui tournent */
+.g3d{font:800 14px/1 system-ui,sans-serif;font-style:normal}
+.g3d b{position:absolute;left:0;top:0;font-weight:800}
+.g-spin{animation:g-spin 2.4s linear infinite;animation-delay:var(--d,0s)}
+.sparkle{animation:twinkle3d 1.8s ease-in-out infinite;animation-delay:var(--d,0s)}
+.sparkle b{animation:twinkle-fade 1.8s ease-in-out infinite;animation-delay:var(--d,0s)}
+.sparkle.s1{right:2px;top:10px}.sparkle.s2{left:6px;top:28px;font-size:12px}.sparkle.s3{right:10px;bottom:10px;font-size:13px}
+.heart{animation:heart-rise 2s ease-out infinite;animation-delay:var(--d,0s)}
+.heart b{opacity:0;animation:glyph-fade 2s ease-out infinite;animation-delay:var(--d,0s)}
+.heart.h1{right:4px;bottom:34px;font-size:15px}.heart.h2{right:-6px;bottom:24px;font-size:12px}.heart.h3{left:8px;bottom:30px;font-size:13px}
+.zzz{animation:zzz3d 2.4s ease-out infinite;animation-delay:var(--d,0s)}
+.zzz b{opacity:0;animation:glyph-fade 2.4s ease-out infinite;animation-delay:var(--d,0s)}
+.zzz.z1{right:12px;top:18px;font-size:13px}.zzz.z2{right:2px;top:8px;font-size:15px}.zzz.z3{right:-8px;top:-4px;font-size:18px}
+/* Bulle de pensée (reste à plat, comme une BD) */
+.prop-think{right:-14px;top:-24px;animation:think-in .4s ease-out both}
 .prop-think.is-small{right:-12px;top:-12px}
 .think-cloud{min-width:30px;padding:4px 8px;border-radius:14px;background:#f2f2f5;color:#1b1c22;font:700 12px/1.2 system-ui,sans-serif;text-align:center;box-shadow:0 4px 12px #0007;white-space:nowrap}
 .think-dot{position:absolute;border-radius:50%;background:#f2f2f5}
@@ -429,41 +480,56 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .think-numbers b{margin:0 1px;color:#7c3aed}
 .think-q{display:inline-block;color:#7c3aed;font-size:14px;animation:think-tilt 1s ease-in-out infinite}
 .think-sticker{color:#db2777}
-.sparkle{color:#ffd166;font-size:13px;font-style:normal;animation:twinkle 1.8s ease-in-out infinite}
-.sparkle.s1{right:-4px;top:6px}.sparkle.s2{left:-2px;top:22px;animation-delay:.6s;color:#c4b5fd}.sparkle.s3{right:6px;bottom:4px;animation-delay:1.1s;color:#7dd3fc}
-.heart{color:#ff6b8b;font-size:14px;font-style:normal;opacity:0;animation:heart-up 2s ease-out infinite}
-.heart.h1{right:0;bottom:30px}.heart.h2{right:-10px;bottom:20px;animation-delay:.7s;font-size:11px}.heart.h3{left:2px;bottom:26px;animation-delay:1.3s;font-size:12px}
-.confetti{left:50%;top:50%}
-.confetto{position:absolute;width:6px;height:9px;border-radius:2px;opacity:0;animation:confetto 1.6s cubic-bezier(.15,.7,.3,1) var(--d) both}
-.prop-puff{right:-16px;top:-6px;width:40px;animation:puff 1.6s ease-in-out infinite}
-.zzz{color:#c4b5fd;font:800 13px/1 system-ui,sans-serif;font-style:normal;opacity:0;animation:zzz 2.4s ease-out infinite}
-.zzz.z1{right:8px;top:14px}.zzz.z2{right:-2px;top:4px;animation-delay:.8s;font-size:15px}.zzz.z3{right:-12px;top:-8px;animation-delay:1.6s;font-size:18px}
-@keyframes prop-bob{50%{transform:rotate(-4deg) translateY(-3px)}}
-@keyframes calc-press{0%{fill-opacity:1}8%{fill-opacity:.35}16%{fill-opacity:1}}
-@keyframes calc-pop{from{transform:scale(.2) rotate(-20deg);opacity:0}}
-@keyframes snip-a{to{transform:rotate(9deg)}}
-@keyframes snip-b{to{transform:rotate(-9deg)}}
-@keyframes prop-slide{50%{transform:translateX(-6px) rotate(-6deg)}}
-@keyframes paper-fall{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(-8px,22px) rotate(160deg)}}
-@keyframes pencil-write{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(-4px,2px) rotate(-6deg)}50%{transform:translate(-1px,-1px) rotate(3deg)}75%{transform:translate(-5px,1px) rotate(-3deg)}}
-@keyframes hourglass-flip{0%,80%{transform:rotate(0)}100%{transform:rotate(180deg)}}
+.confetti{left:50%;top:50%;transform-style:preserve-3d}
+.confetto{position:absolute;width:6px;height:9px;border-radius:2px;opacity:0;animation:confetto 1.8s cubic-bezier(.15,.7,.3,1) var(--d) both}
+@keyframes shadow-breathe{50%{transform:scaleX(.82);opacity:.7}}
+@keyframes pencil3d-write{0%,100%{transform:rotateZ(135deg) rotateX(-18deg) translate(0,0)}25%{transform:rotateZ(129deg) rotateX(-26deg) translate(-4px,2px)}50%{transform:rotateZ(139deg) rotateX(-14deg) translate(-1px,-2px)}75%{transform:rotateZ(131deg) rotateX(-22deg) translate(-5px,1px)}}
+@keyframes pencil3d-roll{from{transform:translateX(-22px) rotateX(0)}to{transform:translateX(-22px) rotateX(360deg)}}
+@keyframes calc3d-turn{0%,100%{transform:rotateX(14deg) rotateY(-34deg) rotateZ(-8deg)}50%{transform:rotateX(8deg) rotateY(30deg) rotateZ(4deg)}}
+@keyframes prop-bob3d{50%{transform:translateY(-3px)}}
+@keyframes ck-press{0%{transform:translateY(0)}8%{transform:translateY(1.2px);box-shadow:0 .2px 0 #171a21;filter:brightness(1.5)}16%{transform:none}}
+@keyframes calc-pop{from{transform:rotateX(90deg) scale(.4);opacity:0}}
+@keyframes sc3d-turn{0%,100%{transform:rotateZ(-14deg) rotateX(18deg) rotateY(-34deg)}50%{transform:rotateZ(-6deg) rotateX(34deg) rotateY(30deg) translateX(-4px)}}
+@keyframes snip3d-a{to{transform:rotateZ(12deg)}}
+@keyframes snip3d-b{to{transform:rotateZ(-12deg)}}
+@keyframes paper-fall{0%{opacity:1;transform:translate(0,0) rotate3d(1,1,0,0)}100%{opacity:0;transform:translate(-8px,22px) rotate3d(1,.4,.2,320deg)}}
+@keyframes hg3d-flip{0%,80%{transform:scale(.72) rotateX(-14deg) rotateZ(0)}100%{transform:scale(.72) rotateX(-14deg) rotateZ(180deg)}}
+@keyframes hg3d-spin{to{transform:rotateY(360deg)}}
 @keyframes sand-top{0%{transform:scaleY(1)}80%,100%{transform:scaleY(.1)}}
 @keyframes sand-bottom{0%{opacity:.2}80%,100%{opacity:1}}
+@keyframes err3d-bob{50%{transform:translateY(-4px)}}
+@keyframes cube-tumble{to{transform:rotateX(360deg) rotateY(720deg)}}
+@keyframes g-spin{to{transform:rotateY(360deg)}}
+@keyframes twinkle3d{0%,100%{transform:scale(.6)}50%{transform:scale(1.2)}}
+@keyframes twinkle-fade{0%,100%{opacity:.25}50%{opacity:1}}
+@keyframes heart-rise{0%{transform:translateY(6px) scale(.6)}100%{transform:translateY(-26px) scale(1.1)}}
+@keyframes glyph-fade{0%{opacity:0}20%,60%{opacity:1}100%{opacity:0}}
+@keyframes zzz3d{0%{transform:translate(0,4px) scale(.7)}100%{transform:translate(8px,-16px) scale(1.1)}}
 @keyframes think-in{from{opacity:0;transform:translate(-8px,8px) scale(.6)}}
 @keyframes think-hop{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-3px)}}
 @keyframes think-tilt{50%{transform:rotate(14deg) scale(1.15)}}
-@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1.15)}}
-@keyframes heart-up{0%{opacity:0;transform:translateY(6px) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translateY(-26px) scale(1.1)}}
-@keyframes confetto{0%{opacity:1;transform:translate(0,0) rotate(0)}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + 30px)) rotate(var(--r))}}
-@keyframes puff{50%{transform:translateY(-3px) scale(1.06)}}
-@keyframes zzz{0%{opacity:0;transform:translate(0,4px) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translate(8px,-16px) scale(1.1)}}
+@keyframes confetto{0%{opacity:1;transform:translate(0,0) rotate3d(1,.6,.2,0)}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + 30px)) rotate3d(1,.6,.2,var(--r))}}
 @keyframes cricut-shake{25%{transform:translateX(-4px) rotate(-4deg)}75%{transform:translateX(4px) rotate(4deg)}}
+
+/* Envoi à la VM : le bot sort de sa case, emporte la planche et la lance (elle se décompose en binaire) */
+.cricut-bot-wrap.is-away .cricut-bot,.cricut-bot-wrap.is-away .cricut-props{visibility:hidden}
+.cricut-bot-wrap.is-away::after{content:"";position:absolute;inset:8px;border:2px dashed #a78bfa99;border-radius:24px;animation:case-glow 1s ease-in-out infinite}
+#cricut-preview.is-taken{visibility:hidden}
+.cricut-launch{position:fixed;inset:0;z-index:300;overflow:hidden;pointer-events:none;perspective:600px;transition:opacity .35s}
+.cricut-launch.is-leaving{opacity:0}
+.launch-flyer,.launch-card,.launch-bit{position:absolute;left:0;top:0;will-change:transform}
+.launch-flyer{display:grid;place-items:center;width:84px;height:84px;filter:drop-shadow(0 12px 14px #000a)}
+.launch-flyer .cricut-bot{width:84px;height:84px}
+.launch-card{overflow:hidden;border:2px solid #fff;border-radius:10px;background:#fff;box-shadow:0 14px 30px #000a}
+.launch-card img{display:block;width:100%;height:100%;object-fit:cover}
+.launch-bit{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-style:normal;line-height:1;text-shadow:0 0 6px currentColor}
+.launch-vm{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 12px);display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #a78bfa66;border-radius:999px;background:#15161cf0;color:#e9e3ff;font:700 12px/1 system-ui,sans-serif;box-shadow:0 0 24px #a78bfa44;transform:translateX(-50%);animation:vm-in .45s cubic-bezier(.3,1.5,.5,1) both}
+.launch-vm.is-hit{animation:vm-hit .6s ease-out both}
+@keyframes case-glow{50%{border-color:#f0abfcaa;box-shadow:0 0 18px #a78bfa55}}
+@keyframes vm-in{from{opacity:0;transform:translate(-50%,-18px) scale(.7)}}
+@keyframes vm-hit{0%{transform:translateX(-50%) scale(1)}35%{transform:translateX(-50%) scale(1.14);box-shadow:0 0 34px #a78bfaaa;border-color:#f0abfc}100%{transform:translateX(-50%) scale(1)}}
+
 @media (prefers-reduced-motion:reduce){.cricut-props *,.cricut-bot-wrap .cricut-bot{animation:none!important}.confetto,.heart,.zzz,.paper{display:none}}
-.cricut-hero{padding-top:26px}
-.cricut-bot-wrap{z-index:2}
-.calc-pop{right:auto;left:-8px;top:-18px}
-.prop-think{right:-14px;top:-24px}
-.calc-pop{left:2px}
 
 /* Rôles (page Admin) */
 .admin-roles{display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid #ffffff12;border-radius:16px;background:#111216}
