@@ -1181,7 +1181,12 @@
     const finished = job?.phase === 'finished' && job.files.length > 0;
     $('cricut-actions').hidden = !job || active;
     $('cricut-zip').hidden = !finished;
-    if (finished) $('cricut-zip').href = `/api/cricut/jobs/${job.id}/zip`;
+    $('cricut-all').hidden = !finished;
+    if (finished) {
+      $('cricut-zip').href = `/api/cricut/jobs/${job.id}/zip`;
+      $('cricut-all').textContent = `Tout télécharger (${job.files.length} images)`;
+      prefetchCricutFiles(job);
+    }
     $('cricut-delete').hidden = !job || job.phase === 'deleted';
   }
   async function refreshCricut() {
@@ -1273,6 +1278,60 @@
     }
     renderCricut();
     scheduleCricut(1500);
+  });
+  // « Tout télécharger » : sur iPhone, menu de partage (« Enregistrer N images » dans Photos) ;
+  // ailleurs, un téléchargement par PNG. Les images sont préchargées pour que le partage parte
+  // directement dans le toucher (iOS refuse un partage lancé après une longue attente).
+  let cricutCache = { id: '', files: [] };
+  async function prefetchCricutFiles(job) {
+    const key = `${job.id}:${job.files.join(',')}`;
+    if (cricutCache.key === key) return cricutCache.ready;
+    cricutCache = { key, id: job.id, files: [] };
+    cricutCache.ready = Promise.all(job.files.map(async (name) => {
+      const response = await fetch(cricutUrl(name), { credentials: 'same-origin' });
+      if (!response.ok) throw new Error('Image indisponible');
+      return new File([await response.blob()], name, { type: 'image/png' });
+    })).then((files) => { if (cricutCache.key === key) cricutCache.files = files; return files; }).catch(() => []);
+    return cricutCache.ready;
+  }
+  function markCricutDownloaded(job) {
+    // Le ZIP marque toutes les images comme téléchargées (et lance la suppression dans 10 min).
+    fetch(`/api/cricut/jobs/${job.id}/zip`, { credentials: 'same-origin' }).catch(() => {}).finally(() => setTimeout(refreshCricut, 800));
+  }
+  $('cricut-all').addEventListener('click', async () => {
+    const job = cricutJob;
+    if (!job?.files.length) return;
+    let files = cricutCache.id === job.id ? cricutCache.files : [];
+    const canShareFiles = (list) => list.length && navigator.canShare?.({ files: list });
+    if (canShareFiles(files)) {
+      try {
+        await navigator.share({ files, title: 'Stickers Cricut' });
+        markCricutDownloaded(job);
+      } catch (error) {
+        if (error.name !== 'AbortError') cricutNote = 'Le partage a échoué : essaie « Télécharger en ZIP ».';
+        renderCricut();
+      }
+      return;
+    }
+    if (!files.length && navigator.canShare) {
+      cricutNote = 'Je prépare tes images… touche encore « Tout télécharger » dans un instant.';
+      renderCricut();
+      files = await prefetchCricutFiles(job);
+      cricutNote = files.length ? 'Images prêtes : touche « Tout télécharger » pour les enregistrer.' : 'Images indisponibles : essaie « Télécharger en ZIP ».';
+      renderCricut();
+      if (canShareFiles(files)) return;
+    }
+    // Ordinateur : un téléchargement par image, espacés pour que le navigateur les accepte tous.
+    for (const name of job.files) {
+      const link = document.createElement('a');
+      link.href = cricutUrl(name, true);
+      link.download = name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      await wait(350);
+    }
+    setTimeout(refreshCricut, 1500);
   });
   $('cricut-new').addEventListener('click', () => { cricutWantsNew = true; cricutNote = ''; renderCricut(); });
   $('cricut-delete').addEventListener('click', async () => {
