@@ -400,3 +400,67 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .cricut-actions [hidden]{display:none}
 .cricut-secondary{display:inline-flex;align-items:center;justify-content:center;flex:1 1 100%;height:44px;border:1px solid #ffffff1f;border-radius:14px;background:#1f2026;color:#f2f2f5;font-size:14px;font-weight:600;text-decoration:none}
 .cricut-actions button.cricut-primary{flex:1 1 100%;height:48px;border:0;background:#f2f2f5;color:#0b0c10;font-size:15px;font-weight:650}
+
+/* Cricutastrophe : accessoires animés selon l'étape */
+.cricut-bot-wrap{position:relative;flex:none;width:96px;height:96px;display:grid;place-items:center}
+.cricut-bot-wrap.is-shaking .cricut-bot{animation:cricut-shake .5s ease-in-out 3}
+.cricut-props{position:absolute;inset:0;pointer-events:none}
+.cricut-props>*{position:absolute}
+.prop-calc{right:-10px;bottom:-6px;width:36px;transform:rotate(-10deg);animation:prop-bob 1.6s ease-in-out infinite;filter:drop-shadow(0 4px 6px #0008)}
+.calc-key{animation:calc-press 1.2s steps(1) infinite}
+.calc-key.k1{animation-delay:.15s}.calc-key.k3{animation-delay:.35s}.calc-key.k5{animation-delay:.5s}.calc-key.k7{animation-delay:.7s}.calc-key.k8{animation-delay:.85s}.calc-key.k10{animation-delay:1s}
+.calc-pop{right:-30px;top:6px;padding:3px 8px;border-radius:10px;background:#30d158;color:#04140a;font:800 14px/1.2 ui-monospace,Menlo,monospace;font-style:normal;animation:calc-pop .5s cubic-bezier(.3,1.6,.5,1) both}
+.prop-scissors{right:-14px;bottom:2px;width:38px;filter:drop-shadow(0 3px 5px #0008);animation:prop-slide 2.4s ease-in-out infinite}
+.blade{transform-box:view-box;transform-origin:22px 22px}
+.blade-a{animation:snip-a .42s ease-in-out infinite alternate}
+.blade-b{animation:snip-b .42s ease-in-out infinite alternate}
+.paper{bottom:2px;right:6px;width:6px;height:4px;border-radius:1px;background:#ffd166;opacity:0;animation:paper-fall 1.3s ease-in infinite}
+.paper.p2{background:#7dd3fc;animation-delay:.45s;right:14px}.paper.p3{background:#ff8fab;animation-delay:.9s;right:-2px}
+.prop-pencil{right:-12px;bottom:0;width:36px;animation:pencil-write .9s ease-in-out infinite;filter:drop-shadow(0 3px 5px #0008)}
+.prop-hourglass{right:-6px;bottom:2px;width:24px;animation:hourglass-flip 2.4s ease-in-out infinite}
+.sand-top{animation:sand-top 2.4s linear infinite}.sand-bottom{animation:sand-bottom 2.4s linear infinite}
+.prop-think{right:-20px;top:-16px;animation:think-in .4s ease-out both}
+.prop-think.is-small{right:-12px;top:-12px}
+.think-cloud{min-width:30px;padding:4px 8px;border-radius:14px;background:#f2f2f5;color:#1b1c22;font:700 12px/1.2 system-ui,sans-serif;text-align:center;box-shadow:0 4px 12px #0007;white-space:nowrap}
+.think-dot{position:absolute;border-radius:50%;background:#f2f2f5}
+.think-dot.d1{left:-6px;bottom:-12px;width:8px;height:8px}.think-dot.d2{left:-12px;bottom:-20px;width:5px;height:5px}
+.think-dots b,.think-numbers b{display:inline-block;animation:think-hop 1.2s ease-in-out infinite}
+.think-dots b:nth-child(2),.think-numbers b:nth-child(2){animation-delay:.2s}.think-dots b:nth-child(3),.think-numbers b:nth-child(3){animation-delay:.4s}
+.think-numbers b{margin:0 1px;color:#7c3aed}
+.think-q{display:inline-block;color:#7c3aed;font-size:14px;animation:think-tilt 1s ease-in-out infinite}
+.think-sticker{color:#db2777}
+.sparkle{color:#ffd166;font-size:13px;font-style:normal;animation:twinkle 1.8s ease-in-out infinite}
+.sparkle.s1{right:-4px;top:6px}.sparkle.s2{left:-2px;top:22px;animation-delay:.6s;color:#c4b5fd}.sparkle.s3{right:6px;bottom:4px;animation-delay:1.1s;color:#7dd3fc}
+.heart{color:#ff6b8b;font-size:14px;font-style:normal;opacity:0;animation:heart-up 2s ease-out infinite}
+.heart.h1{right:0;bottom:30px}.heart.h2{right:-10px;bottom:20px;animation-delay:.7s;font-size:11px}.heart.h3{left:2px;bottom:26px;animation-delay:1.3s;font-size:12px}
+.confetti{left:50%;top:50%}
+.confetto{position:absolute;width:6px;height:9px;border-radius:2px;opacity:0;animation:confetto 1.6s cubic-bezier(.15,.7,.3,1) var(--d) both}
+.prop-puff{right:-16px;top:-6px;width:40px;animation:puff 1.6s ease-in-out infinite}
+.zzz{color:#c4b5fd;font:800 13px/1 system-ui,sans-serif;font-style:normal;opacity:0;animation:zzz 2.4s ease-out infinite}
+.zzz.z1{right:8px;top:14px}.zzz.z2{right:-2px;top:4px;animation-delay:.8s;font-size:15px}.zzz.z3{right:-12px;top:-8px;animation-delay:1.6s;font-size:18px}
+@keyframes prop-bob{50%{transform:rotate(-4deg) translateY(-3px)}}
+@keyframes calc-press{0%{fill-opacity:1}8%{fill-opacity:.35}16%{fill-opacity:1}}
+@keyframes calc-pop{from{transform:scale(.2) rotate(-20deg);opacity:0}}
+@keyframes snip-a{to{transform:rotate(9deg)}}
+@keyframes snip-b{to{transform:rotate(-9deg)}}
+@keyframes prop-slide{50%{transform:translateX(-6px) rotate(-6deg)}}
+@keyframes paper-fall{0%{opacity:1;transform:translate(0,0) rotate(0)}100%{opacity:0;transform:translate(-8px,22px) rotate(160deg)}}
+@keyframes pencil-write{0%,100%{transform:translate(0,0) rotate(0)}25%{transform:translate(-4px,2px) rotate(-6deg)}50%{transform:translate(-1px,-1px) rotate(3deg)}75%{transform:translate(-5px,1px) rotate(-3deg)}}
+@keyframes hourglass-flip{0%,80%{transform:rotate(0)}100%{transform:rotate(180deg)}}
+@keyframes sand-top{0%{transform:scaleY(1)}80%,100%{transform:scaleY(.1)}}
+@keyframes sand-bottom{0%{opacity:.2}80%,100%{opacity:1}}
+@keyframes think-in{from{opacity:0;transform:translate(-8px,8px) scale(.6)}}
+@keyframes think-hop{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-3px)}}
+@keyframes think-tilt{50%{transform:rotate(14deg) scale(1.15)}}
+@keyframes twinkle{0%,100%{opacity:.2;transform:scale(.6)}50%{opacity:1;transform:scale(1.15)}}
+@keyframes heart-up{0%{opacity:0;transform:translateY(6px) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translateY(-26px) scale(1.1)}}
+@keyframes confetto{0%{opacity:1;transform:translate(0,0) rotate(0)}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + 30px)) rotate(var(--r))}}
+@keyframes puff{50%{transform:translateY(-3px) scale(1.06)}}
+@keyframes zzz{0%{opacity:0;transform:translate(0,4px) scale(.7)}30%{opacity:1}100%{opacity:0;transform:translate(8px,-16px) scale(1.1)}}
+@keyframes cricut-shake{25%{transform:translateX(-4px) rotate(-4deg)}75%{transform:translateX(4px) rotate(4deg)}}
+@media (prefers-reduced-motion:reduce){.cricut-props *,.cricut-bot-wrap .cricut-bot{animation:none!important}.confetto,.heart,.zzz,.paper{display:none}}
+.cricut-hero{padding-top:26px}
+.cricut-bot-wrap{z-index:2}
+.calc-pop{right:auto;left:-8px;top:-18px}
+.prop-think{right:-14px;top:-24px}
+.calc-pop{left:2px}

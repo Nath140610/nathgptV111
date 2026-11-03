@@ -1100,17 +1100,113 @@
     });
     return cricutBotLoading;
   }
-  async function showCricutBot(state) {
+  // Cricutastrophe : accessoires et petites animations selon ce qu'il est en train de faire.
+  const CRICUT_BASE = { type: 'droid', face: 'mouth', size: 84, theme: 'dark' };
+  const CRICUT_LOOKS = {
+    idle: { state: 'default', hat: 'beret', glasses: 'none', headphones: false, bowTie: false },
+    ready: { state: 'default', hat: 'beret', glasses: 'none', headphones: false, bowTie: true },
+    waiting: { state: 'default', hat: 'beanie', glasses: 'none', headphones: false, bowTie: false },
+    numbering: { state: 'working', hat: 'beret', glasses: 'round', headphones: false, bowTie: false },
+    counting: { state: 'working', hat: 'none', glasses: 'square', headphones: false, bowTie: false },
+    counted: { state: 'default', hat: 'none', glasses: 'square', headphones: false, bowTie: false },
+    stickers: { state: 'working', hat: 'none', glasses: 'none', headphones: true, bowTie: false },
+    finished: { state: 'default', hat: 'party', glasses: 'none', headphones: false, bowTie: true },
+    error: { state: 'default', hat: 'none', glasses: 'none', headphones: false, bowTie: false },
+    deleted: { state: 'sleeping', hat: 'beanie', glasses: 'none', headphones: false, bowTie: false },
+  };
+  let cricutMoodKey = '';
+  let cricutCalcTimer = 0;
+  let cricutCelebration = null;
+  let cricutPreviousPhase = '';
+  let cricutTypeTimer = 0;
+  let cricutSaid = '';
+  const calculatorSvg = () => {
+    const keys = [];
+    for (let row = 0; row < 4; row += 1) {
+      for (let col = 0; col < 3; col += 1) {
+        keys.push(`<rect class="calc-key k${row * 3 + col}" x="${6 + col * 10}" y="${21 + row * 7.4}" width="8" height="5.4" rx="1.8" fill="${col === 2 ? '#ff9f43' : '#4a5163'}"/>`);
+      }
+    }
+    return `<svg class="prop-calc" viewBox="0 0 40 52"><rect x="1" y="1" width="38" height="50" rx="7" fill="#2d3340" stroke="#596276" stroke-width="1.5"/><rect x="5" y="5" width="30" height="12" rx="3" fill="#bdf7c9"/><text id="cricut-calc" x="32.5" y="14.6" text-anchor="end" font-size="9" font-weight="700" font-family="ui-monospace,Menlo,monospace" fill="#1d4d2b">0</text>${keys.join('')}</svg>`;
+  };
+  const scissorsSvg = '<svg class="prop-scissors" viewBox="0 0 44 44"><g class="blade blade-a"><path d="M22 22 41 13" stroke="#e3e7ef" stroke-width="3.4" stroke-linecap="round"/><path d="M22 22 14 26" stroke="#ff6b8b" stroke-width="3.4" stroke-linecap="round"/><circle cx="9" cy="28.5" r="5.6" fill="none" stroke="#ff6b8b" stroke-width="3.2"/></g><g class="blade blade-b"><path d="M22 22 41 31" stroke="#e3e7ef" stroke-width="3.4" stroke-linecap="round"/><path d="M22 22 14 18" stroke="#ff6b8b" stroke-width="3.4" stroke-linecap="round"/><circle cx="9" cy="15.5" r="5.6" fill="none" stroke="#ff6b8b" stroke-width="3.2"/></g><circle cx="22" cy="22" r="2.1" fill="#fff"/></svg>';
+  const pencilSvg = '<svg class="prop-pencil" viewBox="0 0 44 44"><g transform="rotate(-38 22 22)"><rect x="8" y="17" width="24" height="10" rx="1.5" fill="#ffd166"/><rect x="8" y="17" width="24" height="3.3" fill="#ffe29a"/><rect x="3" y="17" width="6" height="10" rx="2" fill="#ff8fab"/><rect x="8.5" y="17" width="2.5" height="10" fill="#c9ced8"/><path d="M32 17 41 22 32 27Z" fill="#f4d9b0"/><path d="M38 20.3 41 22 38 23.7Z" fill="#333"/></g></svg>';
+  const hourglassSvg = '<svg class="prop-hourglass" viewBox="0 0 30 40"><path d="M5 3h20M5 37h20" stroke="#c4b5fd" stroke-width="3" stroke-linecap="round"/><path d="M7 4c0 9 8 11 8 16s-8 7-8 16h16c0-9-8-11-8-16s8-7 8-16Z" fill="#ffffff14" stroke="#c4b5fd" stroke-width="1.6"/><path class="sand-top" d="M10 9h10c-1 4-4 6-5 8-1-2-4-4-5-8Z" fill="#ffd166"/><path class="sand-bottom" d="M9 35c1-5 4-7 6-9 2 2 5 4 6 9Z" fill="#ffd166"/></svg>';
+  const thought = (content, extra = '') => `<div class="prop-think ${extra}"><i class="think-dot d1"></i><i class="think-dot d2"></i><div class="think-cloud">${content}</div></div>`;
+  function confetti(count) {
+    const colors = ['#ff6b8b', '#ffd166', '#7dd3fc', '#a78bfa', '#30d158', '#ff9f43'];
+    return Array.from({ length: count }, (_, index) => {
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.5;
+      const distance = 38 + Math.random() * 34;
+      return `<i class="confetto" style="--x:${Math.cos(angle) * distance}px;--y:${Math.sin(angle) * distance - 18}px;--r:${Math.round(Math.random() * 540)}deg;--d:${(Math.random() * 0.25).toFixed(2)}s;background:${colors[index % colors.length]}"></i>`;
+    }).join('');
+  }
+  function cricutMood(job) {
+    if (cricutCelebration) return cricutCelebration;
+    if (!job || cricutWantsNew) return { key: cricutFile ? 'ready' : 'idle', look: cricutFile ? 'ready' : 'idle' };
+    if (job.phase === 'stickers') return { key: `stickers:${job.current}`, look: 'stickers', current: job.current };
+    return { key: job.phase, look: job.phase };
+  }
+  function cricutPropsHtml(mood) {
+    switch (mood.key.split(':')[0]) {
+      case 'idle': return '<i class="sparkle s1">✦</i><i class="sparkle s2">✦</i><i class="sparkle s3">✧</i>';
+      case 'ready': return '<i class="heart h1">♥</i><i class="heart h2">♥</i><i class="heart h3">♥</i>';
+      case 'waiting': return `${hourglassSvg}${thought('<span class="think-dots"><b>.</b><b>.</b><b>.</b></span>')}`;
+      case 'numbering': return `${pencilSvg}${thought('<span class="think-numbers"><b>1</b><b>2</b><b>3</b></span>')}`;
+      case 'counting': return `${calculatorSvg()}${thought('<span class="think-q">?</span>', 'is-small')}`;
+      case 'counted': return `${calculatorSvg()}<i class="calc-pop">= ${mood.total}</i>`;
+      case 'stickers': return `${scissorsSvg}<i class="paper p1"></i><i class="paper p2"></i><i class="paper p3"></i>${thought(`<span class="think-sticker">n°${mood.current}</span>`)}`;
+      case 'finished': return `<div class="confetti">${confetti(18)}</div><i class="sparkle s1">✦</i><i class="sparkle s2">✧</i>`;
+      case 'error': return '<svg class="prop-puff" viewBox="0 0 44 32"><path d="M10 26a8 8 0 0 1 0-16 10 10 0 0 1 19-3 8 8 0 0 1 6 19Z" fill="#3a3d48" stroke="#5c6070" stroke-width="1.4"/><text x="22" y="22" text-anchor="middle" font-size="13" font-weight="800" fill="#ff8a8a">!</text></svg>';
+      case 'deleted': return '<i class="zzz z1">z</i><i class="zzz z2">z</i><i class="zzz z3">Z</i>';
+      default: return '';
+    }
+  }
+  async function applyCricutMood(job) {
+    // Transitions spéciales : résultat du comptage, puis confettis à la fin.
+    const phase = job && !cricutWantsNew ? job.phase : '';
+    if (cricutPreviousPhase === 'counting' && phase === 'stickers' && job.total) {
+      cricutCelebration = { key: 'counted', look: 'counted', total: job.total };
+      setTimeout(() => { cricutCelebration = null; renderCricut(); }, 2600);
+    }
+    cricutPreviousPhase = phase;
+    const mood = cricutMood(job);
+    if (mood.key !== cricutMoodKey) {
+      cricutMoodKey = mood.key;
+      const props = $('cricut-props');
+      props.className = `cricut-props mood-${mood.key.split(':')[0]}`;
+      props.innerHTML = cricutPropsHtml(mood);
+      $('cricut-bot-wrap').classList.toggle('is-shaking', mood.key === 'error');
+      clearInterval(cricutCalcTimer);
+      if (mood.key === 'counting') {
+        // La calculatrice « calcule » : chiffres qui défilent.
+        cricutCalcTimer = setInterval(() => { const digits = $('cricut-calc'); if (digits) digits.textContent = String(Math.floor(Math.random() * 99)); }, 140);
+      } else if (mood.key === 'counted') {
+        const digits = $('cricut-calc');
+        if (digits) digits.textContent = String(mood.total);
+      }
+    }
     try {
       const library = await loadCricutBot();
-      if (!cricutBot) cricutBot = library.mount($('cricut-bot'), { type: 'droid', face: 'mouth', size: 84, state, theme: 'dark', hat: 'beret' });
-      else cricutBot.update({ state });
+      const look = { ...CRICUT_BASE, ...CRICUT_LOOKS[mood.look] };
+      if (!cricutBot) cricutBot = library.mount($('cricut-bot'), look);
+      else cricutBot.update(look);
     } catch { $('cricut-bot').classList.add('is-fallback'); }
   }
-  function cricutBotState(job) {
-    if (job && CRICUT_ACTIVE.includes(job.phase)) return 'working';
-    if (job?.phase === 'deleted') return 'sleeping';
-    return 'default';
+  function sayCricut(text) {
+    if (text === cricutSaid) return;
+    cricutSaid = text;
+    clearInterval(cricutTypeTimer);
+    const bubble = $('cricut-say');
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { bubble.textContent = text; return; }
+    // Le texte s'écrit lettre par lettre, comme s'il parlait.
+    let shown = 0;
+    bubble.textContent = '';
+    cricutTypeTimer = setInterval(() => {
+      shown = Math.min(text.length, shown + 2);
+      bubble.textContent = text.slice(0, shown);
+      if (shown >= text.length) clearInterval(cricutTypeTimer);
+    }, 22);
   }
   function cricutSays(job) {
     if (cricutNote) return cricutNote;
@@ -1161,8 +1257,8 @@
   function renderCricut() {
     const job = cricutWantsNew ? null : cricutJob;
     const active = Boolean(job && CRICUT_ACTIVE.includes(job.phase));
-    $('cricut-say').textContent = cricutSays(job);
-    showCricutBot(cricutBotState(job));
+    sayCricut(cricutSays(job));
+    applyCricutMood(job);
     const steps = (job?.total || 0) + 2;
     const done = job ? Number(job.numbered) + Number(job.total > 0) + job.completed + job.failed.length : 0;
     const percent = !job ? 0 : ['finished', 'deleted'].includes(job.phase) ? 100 : Math.round(done / Math.max(steps, 3) * 100);
@@ -1206,8 +1302,12 @@
     cricutTimer = setTimeout(async () => {
       const before = cricutJob?.phase;
       if (document.visibilityState === 'visible' || active) await refreshCricut();
-      if (before && CRICUT_ACTIVE.includes(before) && cricutJob?.phase === 'finished') {
-        notifyIfHidden('Tes stickers sont prêts ✂️', `${cricutJob.completed} stickers à télécharger.`, '');
+      if (before && CRICUT_ACTIVE.includes(before) && ['finished', 'error'].includes(cricutJob?.phase)) {
+        if (cricutJob.phase === 'finished') notifyIfHidden('Tes stickers sont prêts ✂️', `${cricutJob.completed} stickers à télécharger.`, '');
+        // Les images Cricut comptent dans le compteur : on récupère le nouveau total.
+        setTimeout(() => api('/api/auth/me').then(({ account: fresh }) => {
+          if (account?.key === fresh.key) { account.tokensUsed = Number(fresh.tokens_used) || 0; renderUsageCost(); }
+        }).catch(() => {}), 2500);
       }
       scheduleCricut();
     }, delay ?? (active ? 4000 : 15000));

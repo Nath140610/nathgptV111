@@ -46,6 +46,10 @@ MAX_CHAT_BODY_BYTES = 36 * 1024 * 1024  # fichiers joints en base64 (+33 %)
 PURGE_INTERVAL_SECONDS = 60 * 60
 MEMORY_IMAGES_BYTES = 150 * 1024 * 1024
 HEARTBEAT_SECONDS = 10
+# Compteur d'économies : stocké en tokens (même prix que le site). Une image générée compte 0,050 €.
+PRICE_PER_TOKEN_EUR = 0.00000892
+IMAGE_COST_EUR = 0.05
+IMAGE_TOKENS = round(IMAGE_COST_EUR / PRICE_PER_TOKEN_EUR)
 JOB_KEEP_SECONDS = 60 * 60
 LOG = logging.getLogger("nathgpt.site")
 STATIC_FILES = {
@@ -476,6 +480,15 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         LOG.warning("Relance de NathGPT demandée par %s", account["key"])
         return {"ok": True}
 
+    async def charge_images(account_key: str, count: int) -> int | None:
+        """Ajoute 0,050 € par image générée au compteur ; renvoie le nouveau total (en tokens)."""
+        if count <= 0:
+            return None
+        try:
+            return await store.add_usage(account_key, IMAGE_TOKENS * count, False)
+        except StoreError:
+            return None
+
     # ----- Notifications push (VAPID) -----
     PUSH_FIELD_RE = re.compile(r"^[A-Za-z0-9_=-]{1,200}$")
 
@@ -623,6 +636,8 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(400)
         if phase in ("finished", "error") and job_id not in notified_jobs:
             notified_jobs.add(job_id)
+            # Chaque image générée (planche numérotée + stickers) compte 0,050 €.
+            await charge_images(owner, int(bool(job.get("numbered"))) + int(job.get("completed") or 0))
             if phase == "finished":
                 count = int(job.get("completed") or 0)
                 payload = {"title": "Tes stickers sont prêts ✂️", "body": f"Cricutastrophe a découpé {count} sticker{'s' if count > 1 else ''}. Télécharge-les vite : ils sont supprimés 10 min après.", "view": "cricut", "tag": f"cricut-{job_id}"}
@@ -752,6 +767,15 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         async def produce():
             """Lit la réponse de l'API jusqu'au bout, même si le navigateur se déconnecte (iPhone en veille…)."""
             answer = ""
+            image_total = None
+
+            async def finish_usage(done: dict) -> dict:
+                if answer.strip():
+                    return await record_usage(answer, done)
+                if image_total is not None:  # réponse image seule : le total inclut déjà les images
+                    return {**done, "account_tokens_used": image_total, "usage_estimated": account["usage_estimated"]}
+                return done
+
             try:
                 async with asyncio.timeout(360):
                     async for kind, data in client.events(upstream):
@@ -764,12 +788,13 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
                             if data is None:
                                 job.add("error", {"code": "image_error", "message": "L’image reçue est invalide."})
                                 return
-                        elif kind == "done" and answer.strip():
-                            data = await record_usage(answer, data)
+                            image_total = await charge_images(account["key"], 1) or image_total
+                        elif kind == "done":
+                            data = await finish_usage(data)
                         job.add(kind, data)
                         if kind in ("done", "error"):
                             return
-                job.add("done", await record_usage(answer, {}) if answer.strip() else {})
+                job.add("done", await finish_usage({}))
             except (TimeoutError, httpx.TimeoutException):
                 job.add("error", {"code": "timeout", "message": "NathGPT a mis trop de temps à répondre."})
             except (httpx.HTTPError, SSEProtocolError):

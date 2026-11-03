@@ -121,3 +121,22 @@ def test_callback_sends_push_once(tmp_path, monkeypatch):
         assert [sub['endpoint'] for sub in remaining] == ['https://push.example/appareil']
 
     run(scenario())
+
+
+def test_cricut_images_counted_once(tmp_path):
+    import server
+
+    async def scenario():
+        app = create_app(Settings('https://vm.example.com', TOKEN, tmp_path / 'db.sqlite3'), transport=vm_transport([]))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            await client.post('/api/auth/signup', json={'pseudo': 'nath', 'password': PASSWORD})
+            headers = {'authorization': f'Bearer {TOKEN}'}
+            job = {'id': JOB, 'owner': 'nath', 'phase': 'finished', 'numbered': True, 'completed': 24}
+            await client.post('/api/cricut/callback', json={**job, 'phase': 'stickers'}, headers=headers)
+            await client.post('/api/cricut/callback', json=job, headers=headers)
+            await client.post('/api/cricut/callback', json=job, headers=headers)
+            tokens = (await client.get('/api/auth/me')).json()['account']['tokens_used']
+            assert tokens == 25 * server.IMAGE_TOKENS  # planche numérotée + 24 stickers, une seule fois
+            assert round(tokens * server.PRICE_PER_TOKEN_EUR, 2) == 1.25
+
+    run(scenario())

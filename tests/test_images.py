@@ -206,3 +206,26 @@ def test_image_shown_even_if_storage_fails(tmp_path, monkeypatch):
             assert served.status_code == 200 and served.content == png
 
     run(scenario())
+
+
+def test_each_image_costs_five_cents(tmp_path):
+    import server
+    png = big_png()
+    encoded = base64.b64encode(png).decode()
+
+    def upstream(_request):
+        events = ''.join(f'event: image\ndata: {json.dumps({"mime_type": "image/png", "base64": encoded})}\n\n' for _ in range(2))
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, content=(events + 'event: done\ndata: {"type":"image"}\n\n').encode())
+
+    async def scenario():
+        app = create_app(Settings('http://127.0.0.1:18765', 'test-secret', tmp_path / 'db.sqlite3'), transport=httpx.MockTransport(upstream))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver') as client:
+            await client.post('/api/auth/signup', json={'pseudo': 'alice', 'password': PASSWORD})
+            response = await client.post('/api/chat', json={'prompt': 'deux chats', 'conversation_id': 'conversation_1', 'stream': True, 'mode': 'Image'})
+            done = json.loads(response.text.split('event: done\ndata: ', 1)[1].split('\n', 1)[0])
+            assert done['account_tokens_used'] == 2 * server.IMAGE_TOKENS
+            tokens = (await client.get('/api/auth/me')).json()['account']['tokens_used']
+            assert tokens == 2 * server.IMAGE_TOKENS
+            assert round(tokens * server.PRICE_PER_TOKEN_EUR, 2) == 0.10
+
+    run(scenario())
