@@ -35,6 +35,10 @@ MAX_MESSAGES = 500
 CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_FILES = 5
+MAX_FILE_BYTES = 15 * 1024 * 1024
+MAX_FILES_TOTAL_BYTES = 25 * 1024 * 1024
+MAX_CHAT_BODY_BYTES = 36 * 1024 * 1024  # fichiers joints en base64 (+33 %)
 PURGE_INTERVAL_SECONDS = 60 * 60
 MEMORY_IMAGES_BYTES = 150 * 1024 * 1024
 HEARTBEAT_SECONDS = 10
@@ -215,6 +219,34 @@ def decode_image(data: dict) -> tuple[bytes, str] | None:
     return None
 
 
+def read_files(payload: dict) -> list[dict]:
+    """Fichiers joints du navigateur : [{name, type, base64}] vérifiés puis transmis tels quels à l'API."""
+    files = payload.get("files")
+    if files is None:
+        return []
+    if not isinstance(files, list) or len(files) > MAX_FILES:
+        raise HTTPException(400, detail=f"{MAX_FILES} fichiers maximum par message.")
+    checked, total = [], 0
+    for item in files:
+        if not isinstance(item, dict) or not isinstance(item.get("base64"), str):
+            raise HTTPException(400, detail="Fichier joint invalide.")
+        try:
+            size = len(base64.b64decode(item["base64"], validate=True))
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, detail="Fichier joint illisible.") from None
+        name = item.get("name") if isinstance(item.get("name"), str) and item.get("name").strip() else "fichier"
+        if not size:
+            raise HTTPException(400, detail=f"« {name[:60]} » est vide.")
+        if size > MAX_FILE_BYTES:
+            raise HTTPException(413, detail=f"« {name[:60]} » dépasse 15 Mo.")
+        total += size
+        if total > MAX_FILES_TOTAL_BYTES:
+            raise HTTPException(413, detail="Fichiers trop volumineux : 25 Mo maximum au total.")
+        mime_type = item.get("type") if isinstance(item.get("type"), str) else ""
+        checked.append({"filename": name[:120], "mime_type": mime_type[:100], "base64": item["base64"]})
+    return checked
+
+
 def upstream_error(status: int) -> HTTPException:
     if status in (401, 403):
         return HTTPException(502, detail="Le serveur NathGPT refuse son authentification.")
@@ -368,9 +400,9 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(403, detail="Accès réservé aux administrateurs.")
         return account
 
-    async def admin_upstream(method: str, path: str) -> httpx.Response:
+    async def admin_upstream(method: str, path: str, json_body: dict | None = None) -> httpx.Response:
         try:
-            response = await client.admin(method, path)
+            response = await client.admin(method, path, json_body)
         except httpx.HTTPError:
             raise HTTPException(502, detail="La VM NathGPT ne répond pas.") from None
         if response.status_code == 401:
@@ -378,7 +410,11 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         if response.status_code == 404:
             raise HTTPException(502, detail="API de la VM trop ancienne : relance TOUT_FAIRE_TOUT_SEUL.bat.")
         if response.status_code >= 400:
-            raise HTTPException(502, detail="La VM NathGPT a renvoyé une erreur.")
+            try:
+                message = response.json()["error"]["message"]
+            except (ValueError, KeyError, TypeError):
+                message = "La VM NathGPT a renvoyé une erreur."
+            raise HTTPException(502, detail=str(message)[:300])
         return response
 
     @app.get("/api/admin/status")
@@ -408,6 +444,18 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         await admin_account(request)
         lines = (await admin_upstream("GET", "/admin/logs")).json().get("lines") or []
         return {"ok": True, "lines": [str(line)[:2000] for line in lines[-200:]]}
+
+    @app.post("/api/admin/input")
+    async def admin_input(request: Request):
+        """Contrôle à distance : clic, molette, touche ou texte, vérifiés ici puis par la VM."""
+        check_origin(request)
+        await admin_account(request)
+        payload = await read_json_body(request, 8192)
+        allowed = {"action", "x", "y", "button", "double", "steps", "key", "text"}
+        if payload.get("action") not in ("click", "scroll", "key", "text") or set(payload) - allowed:
+            raise HTTPException(400, detail="Action invalide.")
+        await admin_upstream("POST", "/admin/input", payload)
+        return {"ok": True}
 
     @app.post("/api/admin/restart")
     async def admin_restart(request: Request):
@@ -467,7 +515,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         check_origin(request)
         sid = request.cookies.get(COOKIE_NAME)
         account = await current_account(request)
-        payload = await read_json_body(request)
+        payload = await read_json_body(request, MAX_CHAT_BODY_BYTES)
         prompt = payload.get("prompt")
         conversation_id = payload.get("conversation_id")
         if not isinstance(prompt, str) or not prompt.strip():
@@ -481,6 +529,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
             raise HTTPException(400, detail="Le streaming est obligatoire.")
         if not await store.claim_conversation(account["key"], conversation_id):
             raise HTTPException(403, detail="Cette conversation appartient à un autre compte.")
+        files = read_files(payload)
         request_id = payload.get("request_id")
         if request_id is None:
             request_id = uuid.uuid4().hex
@@ -491,7 +540,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         prune_jobs()
         await gate.acquire(sid, client_ip(request))
         try:
-            http_client, upstream = await client.open_stream(prompt, conversation_id, image=payload.get("mode") == "Image")
+            http_client, upstream = await client.open_stream(prompt, conversation_id, image=payload.get("mode") == "Image", files=files)
         except UpstreamStatusError as error:
             await gate.release(sid)
             raise upstream_error(error.status_code) from None

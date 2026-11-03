@@ -85,7 +85,22 @@
     <div class="admin-sheet">
       <header class="admin-head"><h2 id="admin-title">Administration</h2><button id="admin-close" class="icon-button" aria-label="Fermer"><span data-icon="x" data-size="18"></span></button></header>
       <div id="admin-status" class="admin-status" aria-live="polite"></div>
-      <figure class="admin-screen"><img id="admin-screen" alt="Écran de la VM NathGPT" hidden><figcaption id="admin-screen-caption">Chargement de l’écran…</figcaption></figure>
+      <div class="admin-control-bar">
+        <label class="admin-switch"><input id="admin-control" type="checkbox"><span></span> Contrôler la VM</label>
+        <div id="admin-click-kind" class="admin-segment" role="radiogroup" aria-label="Type de clic" hidden>
+          <button type="button" data-click="left" class="is-active">Clic</button><button type="button" data-click="double">Double</button><button type="button" data-click="right">Droit</button>
+        </div>
+      </div>
+      <figure class="admin-screen"><div class="admin-screen-wrap"><img id="admin-screen" alt="Écran de la VM NathGPT" hidden><span id="admin-tap" class="admin-tap" hidden></span></div><figcaption id="admin-screen-caption">Chargement de l’écran…</figcaption></figure>
+      <div id="admin-remote" class="admin-remote" hidden>
+        <form id="admin-type-form" class="admin-type"><input id="admin-type-text" type="text" maxlength="2000" placeholder="Texte à écrire sur la VM…" autocomplete="off" autocapitalize="off"><button type="submit">Écrire</button></form>
+        <div class="admin-keys">
+          <button type="button" data-key="Return">Entrée</button><button type="button" data-key="BackSpace">⌫</button><button type="button" data-key="Tab">Tab</button><button type="button" data-key="Escape">Échap</button>
+          <button type="button" data-key="Up">↑</button><button type="button" data-key="Down">↓</button><button type="button" data-key="Left">←</button><button type="button" data-key="Right">→</button>
+          <button type="button" data-key="ctrl+a">Ctrl+A</button><button type="button" data-key="ctrl+c">Ctrl+C</button><button type="button" data-key="ctrl+v">Ctrl+V</button><button type="button" data-key="F5">F5</button>
+          <button type="button" data-scroll="-5">Molette ↑</button><button type="button" data-scroll="5">Molette ↓</button>
+        </div>
+      </div>
       <div class="admin-actions"><button id="admin-refresh" type="button"><span data-icon="refresh" data-size="16"></span> Actualiser</button><button id="admin-restart" type="button" class="is-danger"><span data-icon="power" data-size="16"></span> <span id="admin-restart-label">Relancer NathGPT</span></button></div>
       <p id="admin-message" class="admin-message" hidden></p>
       <details id="admin-logs-box" class="admin-logs"><summary>Logs de NathGPT</summary><pre id="admin-logs">Chargement…</pre></details>

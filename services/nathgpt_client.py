@@ -189,8 +189,10 @@ class NathGPTClient:
         self.token = token.strip()
         self.transport = transport
 
-    async def open_stream(self, prompt: str, conversation_id: str, *, image: bool = False) -> tuple[httpx.AsyncClient, httpx.Response]:
-        timeout = httpx.Timeout(connect=5, read=120, write=10, pool=5)
+    async def open_stream(self, prompt: str, conversation_id: str, *, image: bool = False,
+                          files: list[dict] | None = None) -> tuple[httpx.AsyncClient, httpx.Response]:
+        # write=90 : l'envoi de fichiers joints (jusqu'à 25 Mo) vers la VM peut être long.
+        timeout = httpx.Timeout(connect=5, read=120, write=90, pool=5)
         client = httpx.AsyncClient(timeout=timeout, transport=self.transport, follow_redirects=False, trust_env=False)
         request = client.build_request(
             "POST", self.url,
@@ -200,7 +202,8 @@ class NathGPTClient:
                 "Content-Type": "application/json",
                 "Cache-Control": "no-cache",
             },
-            json={"prompt": prompt, "conversation_id": conversation_id, "stream": True, **({"response_type": "image"} if image else {})},
+            json={"prompt": prompt, "conversation_id": conversation_id, "stream": True,
+                  **({"response_type": "image"} if image else {}), **({"files": files} if files else {})},
         )
         try:
             response = await client.send(request, stream=True)
@@ -217,12 +220,12 @@ class NathGPTClient:
             await client.aclose()
             raise
 
-    async def admin(self, method: str, path: str) -> httpx.Response:
+    async def admin(self, method: str, path: str, json_body: dict | None = None) -> httpx.Response:
         """Routes /admin/* de l'API (état, capture d'écran, logs, relance), avec le même token."""
         base = self.url.removesuffix("/v1/ask")
         timeout = httpx.Timeout(connect=5, read=20, write=10, pool=5)
         async with httpx.AsyncClient(timeout=timeout, transport=self.transport, follow_redirects=False, trust_env=False) as client:
-            return await client.request(method, base + path, headers={"Authorization": f"Bearer {self.token}"})
+            return await client.request(method, base + path, headers={"Authorization": f"Bearer {self.token}"}, json=json_body)
 
     @staticmethod
     async def events(response: httpx.Response):

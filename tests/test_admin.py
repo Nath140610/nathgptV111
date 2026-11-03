@@ -1,6 +1,7 @@
 """Page Admin : réservée aux comptes is_admin, proxy vers les routes /admin/* de la VM."""
 
 import asyncio
+import json
 import sqlite3
 
 import httpx
@@ -97,5 +98,39 @@ def test_supabase_is_admin():
         assert await store.is_admin('nath') is True
         assert await store.is_admin('alice') is False
         assert await store.is_admin('ancien') is False
+
+    run(scenario())
+
+
+def test_admin_remote_control(tmp_path):
+    sent = []
+
+    def upstream(request):
+        sent.append(json.loads(request.content))
+        if sent[-1].get('key') == 'Inconnue':
+            return httpx.Response(400, json={'ok': False, 'error': {'message': 'Touche inconnue : Inconnue'}})
+        return httpx.Response(200, json={'ok': True})
+
+    async def scenario():
+        db = tmp_path / 'db.sqlite3'
+        app = create_app(Settings('https://vm.example.com', TOKEN, db), transport=httpx.MockTransport(upstream))
+        admin = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver')
+        user = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://testserver')
+        async with admin, user:
+            await admin.post('/api/auth/signup', json={'pseudo': 'nath', 'password': PASSWORD})
+            await user.post('/api/auth/signup', json={'pseudo': 'alice', 'password': PASSWORD})
+            with sqlite3.connect(db) as connection:
+                connection.execute("UPDATE nathgpt_accounts SET is_admin=1 WHERE key='nath'")
+            click = {'action': 'click', 'x': 640, 'y': 400, 'button': 'left', 'double': False}
+            assert (await user.post('/api/admin/input', json=click)).status_code == 403
+            assert (await admin.post('/api/admin/input', json=click)).json() == {'ok': True}
+            assert (await admin.post('/api/admin/input', json={'action': 'text', 'text': 'Salut é'})).status_code == 200
+            assert (await admin.post('/api/admin/input', json={'action': 'shell', 'cmd': 'ls'})).status_code == 400
+            assert (await admin.post('/api/admin/input', json={**click, 'cmd': 'x'})).status_code == 400
+            bad = await admin.post('/api/admin/input', json={'action': 'key', 'key': 'Inconnue'})
+            assert bad.status_code == 502 and 'Touche inconnue' in bad.json()['detail']
+            evil = await admin.post('/api/admin/input', json=click, headers={'origin': 'https://pirate.example'})
+            assert evil.status_code == 403
+        assert sent[:2] == [click, {'action': 'text', 'text': 'Salut é'}] and len(sent) == 3
 
     run(scenario())

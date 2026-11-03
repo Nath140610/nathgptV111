@@ -324,3 +324,32 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .image-expired{display:flex;flex-direction:column;align-items:center;gap:5px;padding:20px;color:#9a9caa;text-align:center}
 .image-expired span{color:#d6d7de;font-size:14px;font-weight:600}
 .image-expired small{font-size:12px}
+/* Contrôle à distance de la VM */
+.admin-control-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.admin-switch{display:inline-flex;align-items:center;gap:10px;color:#e8e8ee;font-size:14px;font-weight:600;cursor:pointer}
+.admin-switch input{position:absolute;opacity:0;pointer-events:none}
+.admin-switch span{position:relative;width:44px;height:26px;border-radius:13px;background:#2a2b31;transition:background .2s}
+.admin-switch span::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .2s}
+.admin-switch input:checked+span{background:#30d158}
+.admin-switch input:checked+span::after{transform:translateX(18px)}
+.admin-switch input:focus-visible+span{outline:2px solid #fff6;outline-offset:2px}
+.admin-segment{display:flex;padding:3px;border-radius:12px;background:#1a1b20;border:1px solid #ffffff12}
+.admin-segment[hidden]{display:none}
+.admin-segment button{height:32px;padding:0 12px;border:0;border-radius:9px;background:transparent;color:#a9abb6;font-size:13px;font-weight:600}
+.admin-segment .is-active{background:#f2f2f5;color:#0b0c10}
+.admin-screen-wrap{position:relative}
+.admin-screen.is-control{border-color:#30d15880;box-shadow:0 0 0 2px #30d15833}
+.admin-screen.is-control img{cursor:crosshair;touch-action:manipulation}
+.admin-tap{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border:2px solid #30d158;border-radius:50%;pointer-events:none;opacity:0}
+.admin-tap.is-on{animation:admin-tap .6s ease-out}
+@keyframes admin-tap{from{opacity:1;transform:scale(.4)}to{opacity:0;transform:scale(1.6)}}
+.admin-remote{display:flex;flex-direction:column;gap:10px}
+.admin-remote[hidden]{display:none}
+.admin-type{display:flex;gap:8px}
+.admin-type input{flex:1;min-width:0;height:44px;padding:0 13px;border:1px solid #ffffff1a;border-radius:12px;background:#16171c;color:#f2f2f5;font-size:16px;outline:none}
+.admin-type input:focus{border-color:#ffffff40}
+.admin-type button{height:44px;padding:0 16px;border:0;border-radius:12px;background:#f2f2f5;color:#0b0c10;font-size:14px;font-weight:650}
+.admin-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.admin-keys button{height:40px;border:1px solid #ffffff12;border-radius:10px;background:#1f2026;color:#e8e8ee;font-size:13px;font-weight:600}
+.admin-keys button:active{background:#30323a;transform:scale(.97)}
+.admin-keys [data-scroll]{grid-column:span 2}

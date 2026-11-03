@@ -218,6 +218,7 @@
   let mode = 'Agent';
   let openMenu = '';
   let pendingRequest = null;
+  let preparingFiles = false;
   let recognition = null;
   let voiceActive = false;
   let voiceShouldSend = false;
@@ -561,7 +562,7 @@
   }
   async function sendMessage() {
     const content = $('message-input').value.trim();
-    if (!content || pendingRequest) return;
+    if (!content || pendingRequest || preparingFiles) return;
     const requiredMode = modeMismatch(mode, content);
     if (requiredMode) { showModeWarning(requiredMode); return; }
     hideModeWarning();
@@ -569,7 +570,13 @@
     const now = Date.now();
     const id = activeId || newId();
     const imageTask = mode === 'Image';
-    const message = { id: newId(), role: 'user', content, task: imageTask ? 'image' : 'chat', attachments: attachments.map((file) => ({ name: file.name, size: file.size })), createdAt: now };
+    const sending = attachments;
+    let files;
+    preparingFiles = true;
+    try { files = await encodeFiles(sending); }
+    catch (error) { showComposerError(error.message); return; }
+    finally { preparingFiles = false; }
+    const message = { id: newId(), role: 'user', content, task: imageTask ? 'image' : 'chat', attachments: sending.map((file) => ({ name: file.name, size: file.size })), createdAt: now };
     const assistant = { id: newId(), role: 'assistant', content: '', task: message.task, state: 'streaming', createdAt: now };
     const existing = chats.find((chat) => chat.id === id);
     const title = content.split('\n')[0].slice(0, 45);
@@ -584,7 +591,7 @@
     updateSendButton();
     let donePayload = {};
     try {
-      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, request_id: assistant.id, stream: true, mode: imageTask ? 'Image' : mode }), signal: controller.signal });
+      const response = await fetch('/api/chat', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }, body: JSON.stringify({ prompt: content, conversation_id: id, request_id: assistant.id, stream: true, mode: imageTask ? 'Image' : mode, ...(files.length ? { files } : {}) }), signal: controller.signal });
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         throw serverFailure(serverError(response.status, payload.detail));
@@ -644,6 +651,33 @@
       recordUsage(accountKey, content, assistant.content, donePayload);
       notifyIfHidden(imageCount ? 'Ton image est prête' : 'Réponse de NathGPT', imageCount ? title : displayAssistantContent(assistant.content).replace(/\s+/g, ' ').slice(0, 140), id);
     }
+  }
+  // Fichiers joints : lus en base64 puis envoyés avec le message jusqu'à ChatGPT.
+  const MAX_FILE_BYTES = 15 * 1024 * 1024;
+  const MAX_FILES_TOTAL_BYTES = 25 * 1024 * 1024;
+  function readAsBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(',', 2)[1] || '');
+      reader.onerror = () => reject(new Error(`Impossible de lire « ${file.name} ».`));
+      reader.readAsDataURL(file);
+    });
+  }
+  async function encodeFiles(list) {
+    let total = 0;
+    for (const file of list) {
+      if (!file.size) throw new Error(`« ${file.name} » est vide.`);
+      if (file.size > MAX_FILE_BYTES) throw new Error(`« ${file.name} » dépasse 15 Mo.`);
+      total += file.size;
+    }
+    if (total > MAX_FILES_TOTAL_BYTES) throw new Error('Fichiers trop volumineux : 25 Mo maximum au total.');
+    return Promise.all(list.map(async (file) => ({ name: file.name, type: file.type || '', base64: await readAsBase64(file) })));
+  }
+  function showComposerError(text) {
+    const note = document.createElement('p');
+    note.textContent = text;
+    modeWarning.replaceChildren(note);
+    modeWarning.hidden = false;
   }
   function serverFailure(message) {
     const error = new Error(message);
@@ -917,7 +951,7 @@
   function refreshAdmin() {
     return Promise.all([refreshAdminStatus(), refreshAdminScreen(), refreshAdminLogs()]);
   }
-  function scheduleAdmin(delay = 3000) {
+  function scheduleAdmin(delay = adminControl ? 1500 : 3000) {
     clearTimeout(adminTimer);
     adminTimer = setTimeout(async () => {
       if ($('admin-panel').hidden) return;
@@ -976,7 +1010,61 @@
   $('admin-refresh').addEventListener('click', () => { refreshAdmin(); scheduleAdmin(); });
   $('admin-restart').addEventListener('click', restartNathGPT);
   $('admin-logs-box').addEventListener('toggle', refreshAdminLogs);
-  $('admin-screen').addEventListener('click', () => { if (adminShot) window.open(adminShot, '_blank', 'noopener'); });
+  // Contrôle à distance : toucher l'écran = cliquer sur la VM au même endroit.
+  let adminControl = false;
+  let adminClickKind = 'left';
+  let adminPointer = { x: 640, y: 400 };
+  async function sendAdminInput(action) {
+    try {
+      await api('/api/admin/input', { method: 'POST', body: JSON.stringify(action) });
+      setTimeout(refreshAdminScreen, 450);
+      setTimeout(refreshAdminScreen, 1500);
+    } catch (error) {
+      adminMessage(`Action impossible : ${error.message}`, 'bad');
+    }
+  }
+  $('admin-control').addEventListener('change', (event) => {
+    adminControl = event.target.checked;
+    $('admin-remote').hidden = !adminControl;
+    $('admin-click-kind').hidden = !adminControl;
+    document.querySelector('.admin-screen').classList.toggle('is-control', adminControl);
+    if (adminControl) adminMessage('Mode contrôle : touche l’écran pour cliquer sur la VM. Évite pendant qu’une réponse est en cours.', '');
+    else adminMessage('');
+    scheduleAdmin(300);
+  });
+  $('admin-click-kind').addEventListener('click', (event) => {
+    const button = event.target.closest('[data-click]');
+    if (!button) return;
+    adminClickKind = button.dataset.click;
+    for (const item of $('admin-click-kind').children) item.classList.toggle('is-active', item === button);
+  });
+  $('admin-screen').addEventListener('click', (event) => {
+    const image = event.currentTarget;
+    if (!adminControl) { if (adminShot) window.open(adminShot, '_blank', 'noopener'); return; }
+    const box = image.getBoundingClientRect();
+    const x = Math.round((event.clientX - box.left) * image.naturalWidth / box.width);
+    const y = Math.round((event.clientY - box.top) * image.naturalHeight / box.height);
+    adminPointer = { x, y };
+    const tap = $('admin-tap');
+    tap.style.left = `${event.clientX - box.left}px`;
+    tap.style.top = `${event.clientY - box.top}px`;
+    tap.hidden = false;
+    restartAnimation(tap, 'is-on');
+    sendAdminInput({ action: 'click', x, y, button: adminClickKind === 'right' ? 'right' : 'left', double: adminClickKind === 'double' });
+  });
+  $('admin-type-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const text = $('admin-type-text').value;
+    if (!text) return;
+    $('admin-type-text').value = '';
+    sendAdminInput({ action: 'text', text });
+  });
+  $('admin-remote').addEventListener('click', (event) => {
+    const key = event.target.closest('[data-key]')?.dataset.key;
+    const scroll = Number(event.target.closest('[data-scroll]')?.dataset.scroll);
+    if (key) sendAdminInput({ action: 'key', key });
+    else if (scroll) sendAdminInput({ action: 'scroll', x: adminPointer.x, y: adminPointer.y, steps: scroll });
+  });
   window.addEventListener('beforeunload', () => pendingRequest?.abort());
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && account) { event.preventDefault(); newChat(); }
