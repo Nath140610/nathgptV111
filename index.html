@@ -60,7 +60,7 @@
       <input id="search-input" class="search-input" type="search" placeholder="Rechercher une conversation" aria-label="Rechercher une conversation" hidden>
       <div class="sidebar-section-title">Conversations</div>
       <nav id="chat-list" class="chat-list" aria-label="Conversations"></nav>
-      <div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span> NathGPT connecté</div><div class="profile-wrap" data-menu><button id="profile-button" class="profile-button" aria-expanded="false"><span id="avatar" class="avatar"></span><span class="profile-name"><span id="profile-name"></span><small>Compte NathGPT</small></span><span data-icon="more" data-size="18"></span></button><div id="profile-menu" class="popover profile-popover" hidden><button id="admin-button" hidden><span data-icon="shield" data-size="16"></span> Administration</button><button id="logout-button"><span data-icon="logout" data-size="16"></span> Se déconnecter</button></div></div></div>
+      <div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span> NathGPT connecté</div><div class="profile-wrap" data-menu><button id="profile-button" class="profile-button" aria-expanded="false"><span id="avatar" class="avatar"></span><span class="profile-name"><span id="profile-name"></span><small>Compte NathGPT</small></span><span data-icon="more" data-size="18"></span></button><div id="profile-menu" class="popover profile-popover" hidden><button id="cricut-button" hidden><span data-icon="scissors" data-size="16"></span> Mode Cricut</button><button id="admin-button" hidden><span data-icon="shield" data-size="16"></span> Administration</button><button id="logout-button"><span data-icon="logout" data-size="16"></span> Se déconnecter</button></div></div></div>
     </aside>
     <main class="main-panel">
       <header class="topbar"><button id="open-sidebar" class="icon-button mobile-menu" aria-label="Ouvrir le menu"><span data-icon="menu" data-size="20"></span></button><div class="topbar-title"><span id="topbar-title-text">NathGPT</span> <span data-icon="chevron" data-size="15"></span></div><div class="topbar-right"><span class="topbar-pill"><span class="status-dot"></span> Espace personnel</span><button id="topbar-new" class="icon-button topbar-new" aria-label="Nouvelle conversation"><span data-icon="plus" data-size="19"></span></button></div></header>
@@ -104,6 +104,28 @@
       <div class="admin-actions"><button id="admin-refresh" type="button"><span data-icon="refresh" data-size="16"></span> Actualiser</button><button id="admin-restart" type="button" class="is-danger"><span data-icon="power" data-size="16"></span> <span id="admin-restart-label">Relancer NathGPT</span></button></div>
       <p id="admin-message" class="admin-message" hidden></p>
       <details id="admin-logs-box" class="admin-logs"><summary>Logs de NathGPT</summary><pre id="admin-logs">Chargement…</pre></details>
+    </div>
+  </section>
+  <section id="cricut-panel" class="admin-panel cricut-panel" aria-labelledby="cricut-title" hidden>
+    <div class="admin-sheet">
+      <header class="admin-head"><h2 id="cricut-title">Mode Cricut</h2><button id="cricut-close" class="icon-button" aria-label="Fermer"><span data-icon="x" data-size="18"></span></button></header>
+      <div class="cricut-hero">
+        <div id="cricut-bot" class="cricut-bot" aria-hidden="true"></div>
+        <div class="cricut-bubble"><strong>Cricutastrophe</strong><p id="cricut-say" aria-live="polite"></p></div>
+      </div>
+      <div id="cricut-progress" class="cricut-progress" hidden><div class="cricut-track"><span id="cricut-bar"></span></div><small id="cricut-progress-text"></small></div>
+      <div id="cricut-upload" class="cricut-upload">
+        <label class="cricut-drop" for="cricut-input"><img id="cricut-preview" alt="Planche choisie" hidden><span id="cricut-drop-text"><strong>Choisir une planche</strong><small>Une seule image, depuis ta galerie</small></span></label>
+        <input id="cricut-input" type="file" accept="image/*" hidden>
+        <button id="cricut-start" type="button" class="cricut-primary" disabled>Lancer Cricutastrophe</button>
+      </div>
+      <figure id="cricut-planche-box" class="cricut-planche" hidden><img id="cricut-planche" alt="Planche numérotée"><figcaption>Planche numérotée</figcaption></figure>
+      <div id="cricut-stickers" class="cricut-stickers"></div>
+      <div id="cricut-actions" class="cricut-actions" hidden>
+        <a id="cricut-zip" class="cricut-primary" download="stickers-cricut.zip" hidden>Tout télécharger (ZIP)</a>
+        <button id="cricut-new" type="button">Nouvelle planche</button>
+        <button id="cricut-delete" type="button" class="is-danger">Supprimer maintenant</button>
+      </div>
     </div>
   </section>
   <section id="ios-install" class="ios-install" aria-labelledby="ios-install-title" hidden>

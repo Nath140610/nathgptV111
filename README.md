@@ -56,6 +56,16 @@ Dans Supabase > Table Editor > `nathgpt_accounts`, coche `is_admin` sur ton comp
 Reconnecte-toi : le menu du profil affiche « Administration » (état de la VM, écran en direct, logs, bouton « Relancer NathGPT »).
 Le droit est vérifié à chaque demande : décocher la case coupe l'accès tout de suite. L'API de la VM doit être à jour (`TOUT_FAIRE_TOUT_SEUL.bat`).
 
+## Mode Cricut (Cricutastrophe)
+
+Coche `cricut` sur un compte dans Supabase (`nathgpt_accounts`) : le menu du profil affiche « Mode Cricut ».
+L'utilisateur dépose une planche de stickers ; la VM la fait redessiner avec un numéro autour de chaque sticker,
+compte les stickers, puis génère un PNG par sticker (une conversation ChatGPT par sticker). Les fichiers restent
+sur la VM et sont supprimés 10 minutes après le téléchargement complet (48 h maximum).
+
+Notifications push (stickers prêts, même app fermée) : ajouter dans Render `VAPID_PUBLIC_KEY` et `VAPID_PRIVATE_KEY`
+(générées dans `VAPID_RENDER.local.txt`, jamais committé). Sur iPhone, il faut l'app sur l'écran d'accueil (iOS 16.4+).
+
 ## Sécurité
 
 - Mots de passe hachés côté serveur (scrypt), 10 tentatives de connexion par minute et par IP.

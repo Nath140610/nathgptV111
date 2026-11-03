@@ -34,7 +34,7 @@ def test_signup_login_me_logout(tmp_path):
             assert (await client.get('/api/auth/me')).status_code == 401
             created = await client.post('/api/auth/signup', json={'pseudo': 'Alice', 'password': PASSWORD})
             assert created.status_code == 200
-            assert created.json()['account'] == {'key': 'alice', 'pseudo': 'Alice', 'tokens_used': 0, 'usage_estimated': False, 'is_admin': False}
+            assert created.json()['account'] == {'key': 'alice', 'pseudo': 'Alice', 'tokens_used': 0, 'usage_estimated': False, 'is_admin': False, 'cricut': False}
             assert 'httponly' in created.headers['set-cookie'].lower()
             assert (await client.get('/api/auth/me')).json()['account']['pseudo'] == 'Alice'
             duplicate = await client.post('/api/auth/signup', json={'pseudo': 'ALICE', 'password': PASSWORD})

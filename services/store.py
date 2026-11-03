@@ -89,8 +89,11 @@ class SQLiteStore:
         with self._connect() as db:
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_accounts (key TEXT PRIMARY KEY, pseudo TEXT NOT NULL, password_hash TEXT NOT NULL, tokens_used INTEGER NOT NULL DEFAULT 0, usage_estimated INTEGER NOT NULL DEFAULT 0, created_at REAL NOT NULL)')
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_sessions (id_hash TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, expires_at REAL NOT NULL)')
-            if 'is_admin' not in {row[1] for row in db.execute('PRAGMA table_info(nathgpt_accounts)')}:
-                db.execute('ALTER TABLE nathgpt_accounts ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
+            columns = {row[1] for row in db.execute('PRAGMA table_info(nathgpt_accounts)')}
+            for flag in ('is_admin', 'cricut'):
+                if flag not in columns:
+                    db.execute(f'ALTER TABLE nathgpt_accounts ADD COLUMN {flag} INTEGER NOT NULL DEFAULT 0')
+            db.execute('CREATE TABLE IF NOT EXISTS nathgpt_push_subscriptions (endpoint TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL)')
             db.execute("CREATE TABLE IF NOT EXISTS nathgpt_conversations (id TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT '', messages TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
 
     def _connect(self) -> sqlite3.Connection:
@@ -124,6 +127,31 @@ class SQLiteStore:
     async def is_admin(self, key: str) -> bool:
         account = await self.get_account(key)
         return bool(account and account.get('is_admin'))
+
+    async def is_cricut(self, key: str) -> bool:
+        account = await self.get_account(key)
+        return bool(account and account.get('cricut'))
+
+    def _save_push(self, key, endpoint, p256dh, auth):
+        with self.lock, self._connect() as db:
+            db.execute('INSERT OR REPLACE INTO nathgpt_push_subscriptions VALUES (?, ?, ?, ?)', (endpoint, key, p256dh, auth))
+
+    async def save_push_subscription(self, key: str, endpoint: str, p256dh: str, auth: str) -> None:
+        await self._run(self._save_push, key, endpoint, p256dh, auth)
+
+    def _list_push(self, key):
+        with self.lock, self._connect() as db:
+            return [dict(row) for row in db.execute('SELECT endpoint, p256dh, auth FROM nathgpt_push_subscriptions WHERE account_key=?', (key,))]
+
+    async def list_push_subscriptions(self, key: str) -> list[dict]:
+        return await self._run(self._list_push, key)
+
+    def _delete_push(self, endpoint):
+        with self.lock, self._connect() as db:
+            db.execute('DELETE FROM nathgpt_push_subscriptions WHERE endpoint=?', (endpoint,))
+
+    async def delete_push_subscription(self, endpoint: str) -> None:
+        await self._run(self._delete_push, endpoint)
 
     def _create_session(self, key):
         sid = secrets.token_urlsafe(32)
@@ -280,6 +308,26 @@ class SupabaseStore:
         except StoreError:
             return False
         return bool(rows and rows[0].get('is_admin') is True)
+
+    async def is_cricut(self, key) -> bool:
+        try:
+            rows = (await self._request('GET', '/nathgpt_accounts', params={'key': f'eq.{key}', 'select': 'cricut'})).json()
+        except StoreError:
+            return False
+        return bool(rows and rows[0].get('cricut') is True)
+
+    async def save_push_subscription(self, key, endpoint, p256dh, auth) -> None:
+        await self._request('POST', '/nathgpt_push_subscriptions', json={'endpoint': endpoint, 'account_key': key, 'p256dh': p256dh, 'auth': auth},
+                            headers={'Prefer': 'resolution=merge-duplicates,return=minimal'})
+
+    async def list_push_subscriptions(self, key) -> list[dict]:
+        try:
+            return (await self._request('GET', '/nathgpt_push_subscriptions', params={'account_key': f'eq.{key}', 'select': 'endpoint,p256dh,auth'})).json()
+        except StoreError:
+            return []
+
+    async def delete_push_subscription(self, endpoint) -> None:
+        await self._request('DELETE', '/nathgpt_push_subscriptions', params={'endpoint': f'eq.{endpoint}'})
 
     async def create_session(self, key) -> str:
         sid = secrets.token_urlsafe(32)

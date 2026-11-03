@@ -15,6 +15,7 @@
     more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
     logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    scissors: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/>',
     refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/>',
     power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
     paperclip: '<path d="m21.4 11.6-8.8 8.8a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/>',
@@ -270,17 +271,25 @@
     $('avatar').textContent = account.pseudo[0].toUpperCase();
     $('welcome-name').textContent = account.pseudo;
     $('admin-button').hidden = !account.isAdmin;
+    $('cricut-button').hidden = !account.cricut;
     renderUsageCost();
     renderAll();
   }
   function startSession(data) {
-    account = { key: data.key, pseudo: data.pseudo, tokensUsed: Number(data.tokens_used) || 0, usageEstimated: Boolean(data.usage_estimated), isAdmin: data.is_admin === true };
+    account = { key: data.key, pseudo: data.pseudo, tokensUsed: Number(data.tokens_used) || 0, usageEstimated: Boolean(data.usage_estimated), isAdmin: data.is_admin === true, cricut: data.cricut === true };
     chats = restoreChats(account.key);
     activeId = null;
     dirtyChats.clear();
     showApp();
     syncConversations();
     setTimeout(askForNotifications, 4200);
+    ensurePushSubscription();
+    // Ouverture depuis une notification push (« Tes stickers sont prêts »).
+    const params = new URLSearchParams(location.search);
+    if (params.get('view') === 'cricut') {
+      history.replaceState(null, '', location.pathname);
+      openCricut();
+    }
   }
 
   // Notifications : prévenir quand une réponse ou une image est prête et que l'app est en arrière-plan.
@@ -303,9 +312,9 @@
     }
     document.body.append(banner);
   }
-  function askForNotifications() {
+  function askForNotifications(force = false) {
     if (!account || !('Notification' in window) || Notification.permission === 'granted') return;
-    if (Date.now() < Number(localStorage.getItem(NOTIF_SNOOZE_KEY) || 0)) return;
+    if (!force && Date.now() < Number(localStorage.getItem(NOTIF_SNOOZE_KEY) || 0)) return;
     if (Notification.permission === 'denied') {
       notificationBanner('Notifications bloquées',
         isAppleDevice ? 'Active-les dans Réglages › Notifications › NathGPT.' : 'Autorise-les dans les réglages du site (icône à gauche de l’adresse).',
@@ -317,7 +326,8 @@
       { label: 'Activer', primary: true, onSelect: () => {
         // Appel direct dans le toucher : obligatoire pour que le navigateur affiche sa demande.
         Promise.resolve(Notification.requestPermission()).then((result) => {
-          if (result !== 'granted') { snoozeNotifications(1); askForNotifications(); }
+          if (result === 'granted') ensurePushSubscription();
+          else { snoozeNotifications(1); askForNotifications(); }
         });
       } },
     ]);
@@ -333,6 +343,7 @@
   }
   navigator.serviceWorker?.register('/sw.js').catch(() => {});
   navigator.serviceWorker?.addEventListener('message', (event) => {
+    if (event.data?.type === 'open-view' && event.data.view === 'cricut') { openCricut(); return; }
     const chatId = event.data?.type === 'open-chat' ? event.data.chatId : '';
     if (chatId && chats.some((chat) => chat.id === chatId)) { activeId = chatId; renderAll(); }
   });
@@ -889,6 +900,8 @@
     if (dirtyChats.size) flushChats();
     api('/api/session/logout', { method: 'POST' }).catch(() => {});
     closeAdmin();
+    closeCricut();
+    cricutJob = null;
     account = null; chats = []; activeId = null; dirtyChats.clear(); closeMenu(); showAuth();
   });
 
@@ -1065,12 +1078,241 @@
     if (key) sendAdminInput({ action: 'key', key });
     else if (scroll) sendAdminInput({ action: 'scroll', x: adminPointer.x, y: adminPointer.y, steps: scroll });
   });
+  // Mode Cricut : Cricutastrophe découpe une planche de stickers en un PNG par sticker (travail fait sur la VM).
+  const CRICUT_ACTIVE = ['waiting', 'numbering', 'counting', 'stickers'];
+  const CRICUT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+  let cricutJob = null;
+  let cricutFile = null;
+  let cricutNote = '';
+  let cricutWantsNew = false;
+  let cricutTimer = 0;
+  let cricutBot = null;
+  let cricutBotLoading = null;
+  let cricutGridKey = '';
+  function loadCricutBot() {
+    if (window.NathGPTBot) return Promise.resolve(window.NathGPTBot);
+    cricutBotLoading ||= new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = '/cricut-bot.bundle.js';
+      script.onload = () => resolve(window.NathGPTBot);
+      script.onerror = () => { cricutBotLoading = null; reject(new Error('bot indisponible')); };
+      document.head.append(script);
+    });
+    return cricutBotLoading;
+  }
+  async function showCricutBot(state) {
+    try {
+      const library = await loadCricutBot();
+      if (!cricutBot) cricutBot = library.mount($('cricut-bot'), { type: 'droid', face: 'mouth', size: 84, state, theme: 'dark', hat: 'beret' });
+      else cricutBot.update({ state });
+    } catch { $('cricut-bot').classList.add('is-fallback'); }
+  }
+  function cricutBotState(job) {
+    if (job && CRICUT_ACTIVE.includes(job.phase)) return 'working';
+    if (job?.phase === 'deleted') return 'sleeping';
+    return 'default';
+  }
+  function cricutSays(job) {
+    if (cricutNote) return cricutNote;
+    if (!job || cricutWantsNew) {
+      return cricutFile ? 'Jolie planche ! Appuie sur « Lancer Cricutastrophe » et je découpe chaque sticker.'
+        : 'Salut, moi c’est Cricutastrophe ! Choisis une planche de stickers dans ta galerie : je la découpe en un PNG par sticker.';
+    }
+    const plural = (count, word) => `${count} ${word}${count > 1 ? 's' : ''}`;
+    switch (job.phase) {
+      case 'waiting': return 'Je fais la queue… je commence dès que NathGPT est libre.';
+      case 'numbering': return 'Je redessine ta planche avec un numéro autour de chaque sticker…';
+      case 'counting': return 'Planche numérotée ! Je compte les stickers…';
+      case 'stickers': return `J’ai trouvé ${job.total} stickers ! Je découpe le n°${job.current}/${job.total}… (une nouvelle conversation par sticker)`;
+      case 'finished': {
+        if (job.delete_at) {
+          const minutes = Math.max(0, Math.ceil((job.delete_at * 1000 - Date.now()) / 60000));
+          return `Tout est téléchargé, merci ! Je supprime les fichiers de la VM dans ${minutes} min.`;
+        }
+        const missing = job.failed.length ? ` (${plural(job.failed.length, 'raté')})` : '';
+        return `Terminé ! ${plural(job.completed, 'sticker')} sur ${job.total}${missing}. Télécharge-les : je les supprime de la VM 10 minutes après.`;
+      }
+      case 'error': return `Oups… ${job.error || 'je me suis arrêté.'}`;
+      case 'deleted': return 'Fichiers supprimés de la VM. On recommence avec une nouvelle planche ?';
+      default: return '';
+    }
+  }
+  const cricutUrl = (name, download = false) => `/api/cricut/jobs/${cricutJob.id}/files/${name}${download ? '?download=1' : ''}`;
+  function renderCricutStickers(job) {
+    const visible = job && !cricutWantsNew && job.phase !== 'deleted' && (job.total || job.files.length);
+    const key = visible ? JSON.stringify([job.id, job.total, job.files, job.failed, job.downloaded, job.phase]) : '';
+    if (key === cricutGridKey) return;
+    cricutGridKey = key;
+    if (!visible) { $('cricut-stickers').replaceChildren(); return; }
+    const tiles = [];
+    for (let index = 1; index <= Math.max(job.total, job.files.length); index += 1) {
+      const name = `sticker_${String(index).padStart(2, '0')}.png`;
+      if (job.files.includes(name)) {
+        const done = job.downloaded.includes(name);
+        tiles.push(`<figure class="cricut-sticker ${done ? 'is-done' : ''}"><img src="${cricutUrl(name)}" alt="Sticker ${index}" loading="lazy"><figcaption>n°${index}</figcaption><a class="cricut-dl" href="${cricutUrl(name, true)}" download="${name}" aria-label="Télécharger le sticker ${index}">${done ? icon('check', 15) : icon('arrow-up', 15)}</a></figure>`);
+      } else if (job.failed.includes(index)) {
+        tiles.push(`<figure class="cricut-sticker is-failed"><span>Raté</span><figcaption>n°${index}</figcaption></figure>`);
+      } else {
+        tiles.push(`<figure class="cricut-sticker is-pending ${job.phase === 'stickers' && job.current === index ? 'is-current' : ''}"><span>${index}</span><figcaption>n°${index}</figcaption></figure>`);
+      }
+    }
+    $('cricut-stickers').innerHTML = tiles.join('');
+  }
+  function renderCricut() {
+    const job = cricutWantsNew ? null : cricutJob;
+    const active = Boolean(job && CRICUT_ACTIVE.includes(job.phase));
+    $('cricut-say').textContent = cricutSays(job);
+    showCricutBot(cricutBotState(job));
+    const steps = (job?.total || 0) + 2;
+    const done = job ? Number(job.numbered) + Number(job.total > 0) + job.completed + job.failed.length : 0;
+    const percent = !job ? 0 : ['finished', 'deleted'].includes(job.phase) ? 100 : Math.round(done / Math.max(steps, 3) * 100);
+    $('cricut-progress').hidden = !job || job.phase === 'error';
+    $('cricut-bar').style.width = `${percent}%`;
+    $('cricut-progress-text').textContent = job?.total ? `${job.completed} / ${job.total} stickers` : (active ? 'Préparation…' : '');
+    $('cricut-upload').hidden = Boolean(job) && !['error', 'deleted'].includes(job.phase);
+    $('cricut-start').disabled = !cricutFile;
+    const showPlanche = Boolean(job?.numbered) && job.phase !== 'deleted';
+    $('cricut-planche-box').hidden = !showPlanche;
+    if (showPlanche && $('cricut-planche').dataset.job !== job.id) {
+      $('cricut-planche').dataset.job = job.id;
+      $('cricut-planche').src = cricutUrl('planche_numerotee.png');
+    }
+    renderCricutStickers(job);
+    const finished = job?.phase === 'finished' && job.files.length > 0;
+    $('cricut-actions').hidden = !job || active;
+    $('cricut-zip').hidden = !finished;
+    if (finished) $('cricut-zip').href = `/api/cricut/jobs/${job.id}/zip`;
+    $('cricut-delete').hidden = !job || job.phase === 'deleted';
+  }
+  async function refreshCricut() {
+    try {
+      if (cricutJob) cricutJob = (await api(`/api/cricut/jobs/${cricutJob.id}`)).job;
+      else cricutJob = (await api('/api/cricut/jobs')).jobs[0] || null;
+    } catch (error) {
+      if (error.status === 404) cricutJob = null;
+      else cricutNote = error.message;
+    }
+    renderCricut();
+  }
+  function scheduleCricut(delay) {
+    clearTimeout(cricutTimer);
+    if ($('cricut-panel').hidden) return;
+    const active = cricutJob && CRICUT_ACTIVE.includes(cricutJob.phase);
+    cricutTimer = setTimeout(async () => {
+      const before = cricutJob?.phase;
+      if (document.visibilityState === 'visible' || active) await refreshCricut();
+      if (before && CRICUT_ACTIVE.includes(before) && cricutJob?.phase === 'finished') {
+        notifyIfHidden('Tes stickers sont prêts ✂️', `${cricutJob.completed} stickers à télécharger.`, '');
+      }
+      scheduleCricut();
+    }, delay ?? (active ? 4000 : 15000));
+  }
+  function openCricut() {
+    if (!account?.cricut) return;
+    closeMenu(); closeSidebar(); closeAdmin();
+    cricutNote = '';
+    $('cricut-panel').hidden = false;
+    renderCricut();
+    refreshCricut().finally(() => scheduleCricut());
+  }
+  function closeCricut() {
+    clearTimeout(cricutTimer);
+    $('cricut-panel').hidden = true;
+  }
+  async function prepareCricutImage(file) {
+    if (CRICUT_TYPES.includes(file.type) && file.size <= 20 * 1024 * 1024) return { blob: file, type: file.type };
+    // HEIC ou image trop lourde : convertie dans le navigateur (PNG pour garder la transparence).
+    const url = URL.createObjectURL(file);
+    try {
+      const image = await new Promise((resolve, reject) => { const img = new Image(); img.onload = () => resolve(img); img.onerror = () => reject(new Error('Image illisible : choisis une photo PNG ou JPEG.')); img.src = url; });
+      const scale = Math.min(1, 4096 / Math.max(image.naturalWidth, image.naturalHeight));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(image.naturalWidth * scale);
+      canvas.height = Math.round(image.naturalHeight * scale);
+      canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+      let blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+      if (blob && blob.size <= 20 * 1024 * 1024) return { blob, type: 'image/png' };
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      if (!blob) throw new Error('Conversion de l’image impossible.');
+      return { blob, type: 'image/jpeg' };
+    } finally { URL.revokeObjectURL(url); }
+  }
+  $('cricut-input').addEventListener('change', (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { cricutNote = 'Il me faut une image (photo de ta planche de stickers).'; renderCricut(); return; }
+    cricutFile = file;
+    cricutNote = '';
+    const preview = $('cricut-preview');
+    if (preview.src) URL.revokeObjectURL(preview.src);
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+    $('cricut-drop-text').hidden = true;
+    renderCricut();
+  });
+  $('cricut-start').addEventListener('click', async () => {
+    if (!cricutFile) return;
+    $('cricut-start').disabled = true;
+    cricutNote = 'J’envoie ta planche à la VM…';
+    renderCricut();
+    try {
+      const { blob, type } = await prepareCricutImage(cricutFile);
+      const image = await readAsBase64(blob);
+      const data = await api('/api/cricut/jobs', { method: 'POST', body: JSON.stringify({ image, type, name: cricutFile.name }) });
+      cricutJob = data.job;
+      cricutFile = null;
+      cricutWantsNew = false;
+      cricutNote = '';
+      $('cricut-preview').hidden = true;
+      $('cricut-drop-text').hidden = false;
+      if ('Notification' in window && Notification.permission === 'default') askForNotifications(true);
+      else ensurePushSubscription();
+    } catch (error) {
+      cricutNote = `Oups… ${error.message}`;
+    }
+    renderCricut();
+    scheduleCricut(1500);
+  });
+  $('cricut-new').addEventListener('click', () => { cricutWantsNew = true; cricutNote = ''; renderCricut(); });
+  $('cricut-delete').addEventListener('click', async () => {
+    if (!cricutJob || !window.confirm('Supprimer cette planche et ses stickers de la VM ?')) return;
+    try { await api(`/api/cricut/jobs/${cricutJob.id}`, { method: 'DELETE' }); } catch (error) { cricutNote = error.message; }
+    await refreshCricut();
+  });
+  // Après un téléchargement, on met à jour les coches et le compte à rebours de suppression.
+  $('cricut-panel').addEventListener('click', (event) => {
+    if (event.target.closest('.cricut-dl, #cricut-zip')) setTimeout(refreshCricut, 2500);
+  });
+  $('cricut-button').addEventListener('click', openCricut);
+  $('cricut-close').addEventListener('click', closeCricut);
+
+  // Notifications push : abonne l'appareil pour être prévenu même app fermée.
+  function base64UrlBytes(value) {
+    const text = atob(value.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - value.length % 4) % 4));
+    return Uint8Array.from(text, (character) => character.charCodeAt(0));
+  }
+  async function ensurePushSubscription() {
+    if (!account || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window) || Notification.permission !== 'granted') return;
+    try {
+      const { key } = await api('/api/push/key');
+      if (!key) return;
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+      const options = { userVisibleOnly: true, applicationServerKey: base64UrlBytes(key) };
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe(options);
+      }
+      await api('/api/push/subscribe', { method: 'POST', body: JSON.stringify(subscription.toJSON()) });
+    } catch { /* notifications push indisponibles sur cet appareil */ }
+  }
   window.addEventListener('beforeunload', () => pendingRequest?.abort());
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k' && account) { event.preventDefault(); newChat(); }
     if (event.key === 'Escape') {
       if (!$('voice-panel').hidden) { event.preventDefault(); cancelVoice(); }
       else if (!$('admin-panel').hidden) closeAdmin();
+      else if (!$('cricut-panel').hidden) closeCricut();
       else { closeMenu(); closeUsageInfo(); closeSidebar(); }
     }
   });

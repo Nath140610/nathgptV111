@@ -16,6 +16,21 @@ create table if not exists public.nathgpt_accounts (
 
 -- Administrateurs : cocher is_admin (Table Editor > nathgpt_accounts) donne accès à la page Admin.
 alter table public.nathgpt_accounts add column if not exists is_admin boolean not null default false;
+-- Mode Cricut : cocher cricut donne accès au panneau Cricutastrophe (planche de stickers -> un PNG par sticker).
+alter table public.nathgpt_accounts add column if not exists cricut boolean not null default false;
+
+-- Abonnements aux notifications push (une ligne par appareil).
+create table if not exists public.nathgpt_push_subscriptions (
+  endpoint    text primary key check (endpoint like 'https://%' and char_length(endpoint) <= 1000),
+  account_key text not null references public.nathgpt_accounts(key) on delete cascade,
+  p256dh      text not null check (char_length(p256dh) <= 200),
+  auth        text not null check (char_length(auth) <= 100),
+  created_at  timestamptz not null default now()
+);
+create index if not exists nathgpt_push_account_idx on public.nathgpt_push_subscriptions (account_key);
+alter table public.nathgpt_push_subscriptions enable row level security;
+revoke all on public.nathgpt_push_subscriptions from anon, authenticated;
+grant select, insert, update, delete on public.nathgpt_push_subscriptions to service_role;
 
 -- Sessions : seul le SHA-256 de l'identifiant du cookie est stocké.
 create table if not exists public.nathgpt_sessions (

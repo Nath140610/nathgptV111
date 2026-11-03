@@ -353,3 +353,48 @@ input::-ms-reveal,input::-ms-clear{display:none}
 .admin-keys button{height:40px;border:1px solid #ffffff12;border-radius:10px;background:#1f2026;color:#e8e8ee;font-size:13px;font-weight:600}
 .admin-keys button:active{background:#30323a;transform:scale(.97)}
 .admin-keys [data-scroll]{grid-column:span 2}
+
+/* ===== Mode Cricut : Cricutastrophe ===== */
+.cricut-hero{display:flex;align-items:center;gap:14px}
+.cricut-bot{flex:none;width:84px;height:84px;display:grid;place-items:center}
+.cricut-bot.is-fallback::before{content:"";width:64px;height:64px;border-radius:22px;background:radial-gradient(circle at 35% 30%,#fff6,transparent 40%),linear-gradient(135deg,#7dd3fc,#a78bfa);box-shadow:0 10px 30px #a78bfa55}
+.cricut-bubble{position:relative;flex:1;min-width:0;padding:12px 14px;border:1px solid #ffffff14;border-radius:18px 18px 18px 6px;background:#1a1b21}
+.cricut-bubble strong{display:block;color:#c4b5fd;font-size:12px;letter-spacing:.02em}
+.cricut-bubble p{margin:4px 0 0;color:#ececf1;font-size:14px;line-height:1.45}
+.cricut-progress{display:flex;flex-direction:column;gap:6px}
+.cricut-progress[hidden]{display:none}
+.cricut-track{height:8px;overflow:hidden;border-radius:4px;background:#22232a}
+.cricut-track span{display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,#7dd3fc,#a78bfa,#f0abfc);transition:width .6s ease}
+.cricut-progress small{color:#8d909c;font-size:12px;font-variant-numeric:tabular-nums}
+.cricut-upload{display:flex;flex-direction:column;gap:10px}
+.cricut-upload[hidden]{display:none}
+.cricut-drop{display:grid;place-items:center;min-height:170px;overflow:hidden;border:1.5px dashed #ffffff30;border-radius:18px;background:#121318;cursor:pointer;text-align:center}
+.cricut-drop img{display:block;max-width:100%;max-height:320px;object-fit:contain}
+.cricut-drop span{display:flex;flex-direction:column;gap:4px;padding:20px}
+.cricut-drop strong{color:#f2f2f5;font-size:15px}
+.cricut-drop small{color:#8d909c;font-size:12px}
+.cricut-primary{display:inline-flex;align-items:center;justify-content:center;height:48px;border:0;border-radius:14px;background:#f2f2f5;color:#0b0c10;font-size:15px;font-weight:650;text-decoration:none}
+.cricut-primary:disabled{opacity:.4}
+.cricut-planche{margin:0;overflow:hidden;border:1px solid #ffffff14;border-radius:16px;background:#111216}
+.cricut-planche[hidden]{display:none}
+.cricut-planche img{display:block;width:100%;height:auto}
+.cricut-planche figcaption{padding:8px 12px;color:#80838f;font-size:12px}
+.cricut-stickers{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
+.cricut-sticker{position:relative;margin:0;display:grid;place-items:center;aspect-ratio:1;overflow:hidden;border:1px solid #ffffff12;border-radius:14px;background:repeating-conic-gradient(#1b1c22 0 25%,#16171c 0 50%) 50%/16px 16px}
+.cricut-sticker img{width:86%;height:86%;object-fit:contain}
+.cricut-sticker figcaption{position:absolute;left:6px;top:5px;color:#9a9caa;font-size:10.5px;font-weight:600}
+.cricut-sticker.is-pending span,.cricut-sticker.is-failed span{color:#5d606c;font-size:20px;font-weight:700}
+.cricut-sticker.is-failed span{color:#ff8a8a;font-size:13px}
+.cricut-sticker.is-current{border-color:#a78bfa;animation:cricut-pulse 1.4s ease-in-out infinite}
+.cricut-sticker.is-done{border-color:#30d15866}
+.cricut-dl{position:absolute;right:6px;bottom:6px;display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#000000b3;color:#fff}
+.cricut-dl svg{transform:rotate(180deg)}
+.cricut-sticker.is-done .cricut-dl{background:#30d158;color:#04140a}
+.cricut-sticker.is-done .cricut-dl svg{transform:none}
+@keyframes cricut-pulse{50%{box-shadow:0 0 0 4px #a78bfa33}}
+.cricut-actions{display:flex;flex-wrap:wrap;gap:8px}
+.cricut-actions[hidden]{display:none}
+.cricut-actions .cricut-primary{flex:1 1 100%}
+.cricut-actions button{flex:1;height:44px;border:1px solid #ffffff14;border-radius:14px;background:#1f2026;color:#f2f2f5;font-size:14px;font-weight:600}
+.cricut-actions .is-danger{border-color:#ff6b6b40;background:#3a1a1d;color:#ffb3b3}
+.cricut-actions [hidden]{display:none}

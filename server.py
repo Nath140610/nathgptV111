@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import base64
 import binascii
+import contextlib
+import hmac
 import json
 import logging
 import os
@@ -34,6 +36,8 @@ MAX_PROMPT_CHARS = 12_000
 MAX_MESSAGES = 500
 CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
+JOB_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+CRICUT_FILE_RE = re.compile(r"^(sticker_\d{2}\.png|planche_numerotee\.png)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_FILES = 5
 MAX_FILE_BYTES = 15 * 1024 * 1024
@@ -50,6 +54,7 @@ STATIC_FILES = {
     "voice.bundle.js": "voice.bundle.js", "ring.bundle.js": "ring.bundle.js",
     "markdown.bundle.js": "markdown.bundle.js",
     "manifest.webmanifest": "manifest.webmanifest", "sw.js": "sw.js",
+    "cricut-bot.bundle.js": "cricut-bot.bundle.js",
 }
 
 
@@ -61,6 +66,9 @@ class Settings:
     supabase_url: str = ""
     supabase_key: str = ""
     cookie_secure: bool = False
+    vapid_public: str = ""
+    vapid_private: str = ""
+    vapid_subject: str = ""
 
 
 class ChatJob:
@@ -276,6 +284,9 @@ def settings_from_env() -> Settings:
         supabase_url=os.getenv("SUPABASE_URL", ""),
         supabase_key=os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
         cookie_secure=os.getenv("NATHGPT_COOKIE_SECURE", "").lower() in ("1", "true", "yes") or bool(os.getenv("RENDER")),
+        vapid_public=os.getenv("VAPID_PUBLIC_KEY", "").strip(),
+        vapid_private=os.getenv("VAPID_PRIVATE_KEY", "").strip(),
+        vapid_subject=os.getenv("VAPID_SUBJECT", "").strip(),
     )
 
 
@@ -364,7 +375,7 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         if not await store.create_account(key, pseudo, password_hash):
             raise HTTPException(409, detail="Ce pseudo est déjà utilisé.")
         sid = await store.create_session(key)
-        return session_response({"ok": True, "account": {"key": key, "pseudo": pseudo, "tokens_used": 0, "usage_estimated": False, "is_admin": False}}, request, sid)
+        return session_response({"ok": True, "account": {"key": key, "pseudo": pseudo, "tokens_used": 0, "usage_estimated": False, "is_admin": False, "cricut": False}}, request, sid)
 
     @app.post("/api/auth/login")
     async def login(request: Request):
@@ -377,13 +388,13 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         await store.revoke(request.cookies.get(COOKIE_NAME))
         sid = await store.create_session(key)
         account = {"key": saved["key"], "pseudo": saved["pseudo"], "tokens_used": int(saved.get("tokens_used") or 0), "usage_estimated": bool(saved.get("usage_estimated")),
-                   "is_admin": await store.is_admin(key)}
+                   "is_admin": await store.is_admin(key), "cricut": await store.is_cricut(key)}
         return session_response({"ok": True, "account": account}, request, sid)
 
     @app.get("/api/auth/me")
     async def me(request: Request):
         account = await current_account(request)
-        return {"ok": True, "account": {**account, "is_admin": await store.is_admin(account["key"])}}
+        return {"ok": True, "account": {**account, "is_admin": await store.is_admin(account["key"]), "cricut": await store.is_cricut(account["key"])}}
 
     @app.post("/api/session/logout")
     async def logout(request: Request):
@@ -463,6 +474,161 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         account = await admin_account(request)
         await admin_upstream("POST", "/admin/restart")
         LOG.warning("Relance de NathGPT demandée par %s", account["key"])
+        return {"ok": True}
+
+    # ----- Notifications push (VAPID) -----
+    PUSH_FIELD_RE = re.compile(r"^[A-Za-z0-9_=-]{1,200}$")
+
+    async def send_push(account_key: str, payload: dict, subject: str) -> int:
+        """Envoie une notification à tous les appareils abonnés du compte. Renvoie le nombre d'envois réussis."""
+        if not (settings.vapid_public and settings.vapid_private):
+            return 0
+        try:
+            from pywebpush import WebPushException, webpush
+        except ImportError:
+            LOG.warning("pywebpush absent : notification push non envoyée")
+            return 0
+        sent = 0
+        for sub in await store.list_push_subscriptions(account_key):
+            info = {"endpoint": sub["endpoint"], "keys": {"p256dh": sub["p256dh"], "auth": sub["auth"]}}
+            try:
+                await asyncio.to_thread(webpush, subscription_info=info, data=json.dumps(payload),
+                                        vapid_private_key=settings.vapid_private,
+                                        vapid_claims={"sub": settings.vapid_subject or subject}, ttl=86400)
+                sent += 1
+            except WebPushException as error:
+                status = getattr(error.response, "status_code", None)
+                if status in (404, 410):  # appareil désabonné
+                    with contextlib.suppress(StoreError):
+                        await store.delete_push_subscription(sub["endpoint"])
+                else:
+                    LOG.warning("Notification push refusée (%s)", status)
+            except Exception:
+                LOG.warning("Notification push impossible", exc_info=True)
+        return sent
+
+    @app.get("/api/push/key")
+    async def push_key():
+        return {"key": settings.vapid_public or None}
+
+    @app.post("/api/push/subscribe")
+    async def push_subscribe(request: Request):
+        check_origin(request)
+        account = await current_account(request)
+        payload = await read_json_body(request, 4096)
+        endpoint = payload.get("endpoint")
+        keys = payload.get("keys") if isinstance(payload.get("keys"), dict) else {}
+        p256dh, auth = keys.get("p256dh"), keys.get("auth")
+        if not isinstance(endpoint, str) or not endpoint.startswith("https://") or len(endpoint) > 1000:
+            raise HTTPException(400, detail="Abonnement invalide.")
+        if not all(isinstance(value, str) and PUSH_FIELD_RE.fullmatch(value) for value in (p256dh, auth)):
+            raise HTTPException(400, detail="Abonnement invalide.")
+        await store.save_push_subscription(account["key"], endpoint, p256dh, auth)
+        return {"ok": True}
+
+    # ----- Mode Cricut (comptes dont la case cricut est cochée) -----
+    notified_jobs: set[str] = set()
+
+    async def cricut_account(request: Request) -> dict:
+        account = await current_account(request)
+        if not await store.is_cricut(account["key"]):
+            raise HTTPException(403, detail="Le mode Cricut n'est pas activé pour ce compte.")
+        return account
+
+    async def cricut_vm(method: str, path: str, account: dict, *, json_body: dict | None = None, read_timeout: float = 30,
+                        params: dict | None = None) -> httpx.Response:
+        try:
+            response = await client.admin(method, path, json_body, params={"owner": account["key"], **(params or {})}, read_timeout=read_timeout)
+        except httpx.HTTPError:
+            raise HTTPException(502, detail="La VM NathGPT ne répond pas.") from None
+        if response.status_code < 400:
+            return response
+        try:
+            message = response.json()["error"]["message"]
+        except (ValueError, KeyError, TypeError):
+            message = ""
+        if response.status_code == 404:
+            raise HTTPException(404, detail="Planche introuvable (peut-être déjà supprimée).")
+        if response.status_code in (400, 409):
+            raise HTTPException(response.status_code, detail=message or "Demande refusée par la VM.")
+        if response.status_code == 401:
+            raise HTTPException(502, detail="Token API refusé par la VM.")
+        raise HTTPException(502, detail="La VM NathGPT a renvoyé une erreur.")
+
+    def check_job_id(job_id: str) -> None:
+        if not JOB_ID_RE.fullmatch(job_id):
+            raise HTTPException(404, detail="Planche introuvable.")
+
+    @app.get("/api/cricut/jobs")
+    async def cricut_list(request: Request):
+        account = await cricut_account(request)
+        return (await cricut_vm("GET", "/cricut/jobs", account)).json()
+
+    @app.post("/api/cricut/jobs")
+    async def cricut_create(request: Request):
+        check_origin(request)
+        account = await cricut_account(request)
+        payload = await read_json_body(request, MAX_CHAT_BODY_BYTES)
+        image, mime_type = payload.get("image"), payload.get("type")
+        if not isinstance(image, str) or mime_type not in ("image/png", "image/jpeg", "image/webp"):
+            raise HTTPException(400, detail="Envoie une image PNG, JPEG ou WebP.")
+        name = payload.get("name") if isinstance(payload.get("name"), str) else "planche"
+        body = {"owner": account["key"], "image": image, "mime_type": mime_type, "filename": name[:120],
+                "callback_url": str(request.base_url).rstrip("/") + "/api/cricut/callback"}
+        return (await cricut_vm("POST", "/cricut/jobs", account, json_body=body, read_timeout=60)).json()
+
+    @app.get("/api/cricut/jobs/{job_id}")
+    async def cricut_get(job_id: str, request: Request):
+        account = await cricut_account(request)
+        check_job_id(job_id)
+        return (await cricut_vm("GET", f"/cricut/jobs/{job_id}", account)).json()
+
+    @app.delete("/api/cricut/jobs/{job_id}")
+    async def cricut_remove(job_id: str, request: Request):
+        check_origin(request)
+        account = await cricut_account(request)
+        check_job_id(job_id)
+        return (await cricut_vm("DELETE", f"/cricut/jobs/{job_id}", account)).json()
+
+    @app.get("/api/cricut/jobs/{job_id}/files/{name}")
+    async def cricut_file(job_id: str, name: str, request: Request, download: int = 0):
+        account = await cricut_account(request)
+        check_job_id(job_id)
+        if not CRICUT_FILE_RE.fullmatch(name):
+            raise HTTPException(404, detail="Fichier introuvable.")
+        response = await cricut_vm("GET", f"/cricut/jobs/{job_id}/files/{name}", account, read_timeout=60,
+                                   params={"download": "1"} if download == 1 else None)
+        headers = {"Cache-Control": "no-store"}
+        if download == 1:
+            headers["Content-Disposition"] = f'attachment; filename="{name}"'
+        return Response(response.content, media_type="image/png", headers=headers)
+
+    @app.get("/api/cricut/jobs/{job_id}/zip")
+    async def cricut_zip(job_id: str, request: Request):
+        account = await cricut_account(request)
+        check_job_id(job_id)
+        response = await cricut_vm("GET", f"/cricut/jobs/{job_id}/zip", account, read_timeout=120)
+        return Response(response.content, media_type="application/zip",
+                        headers={"Cache-Control": "no-store", "Content-Disposition": 'attachment; filename="stickers-cricut.zip"'})
+
+    @app.post("/api/cricut/callback")
+    async def cricut_callback(request: Request):
+        """Appelé par la VM à chaque étape : garde Render éveillé et notifie l'utilisateur à la fin."""
+        supplied = request.headers.get("authorization", "")
+        if not client.token or not hmac.compare_digest(supplied, f"Bearer {client.token}"):
+            raise HTTPException(401)
+        job = await read_json_body(request, 16_384)
+        job_id, owner, phase = job.get("id"), job.get("owner"), job.get("phase")
+        if not isinstance(job_id, str) or not JOB_ID_RE.fullmatch(job_id) or not isinstance(owner, str):
+            raise HTTPException(400)
+        if phase in ("finished", "error") and job_id not in notified_jobs:
+            notified_jobs.add(job_id)
+            if phase == "finished":
+                count = int(job.get("completed") or 0)
+                payload = {"title": "Tes stickers sont prêts ✂️", "body": f"Cricutastrophe a découpé {count} sticker{'s' if count > 1 else ''}. Télécharge-les vite : ils sont supprimés 10 min après.", "view": "cricut", "tag": f"cricut-{job_id}"}
+            else:
+                payload = {"title": "Cricutastrophe s'est arrêté", "body": str(job.get("error") or "La planche n'a pas pu être traitée.")[:160], "view": "cricut", "tag": f"cricut-{job_id}"}
+            await send_push(owner, payload, str(request.base_url).rstrip("/"))
         return {"ok": True}
 
     @app.get("/api/conversations")

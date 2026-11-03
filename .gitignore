@@ -12,3 +12,4 @@ dist/
 # Données personnelles exportées de l’ancien site : ne jamais committer.
 *.local.sql
 IMAGES_NATHGPT/
+*.local.txt
