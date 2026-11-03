@@ -1424,8 +1424,9 @@
     $('cricut-drop-text').hidden = true;
     renderCricut();
   });
-  // Envoi à la VM : Cricutastrophe sort de sa case, attrape la planche, l'emporte en haut de l'écran
-  // et la lance vers la VM, où elle se décompose en 0 et 1 (aux couleurs de l'image).
+  // Envoi à la VM : Cricutastrophe sort de sa case, se glisse sous la planche et la pousse vers le haut.
+  // La planche (en taille réelle) se transforme en 0 et 1 aux couleurs de l'image, qui filent dans
+  // un Dynamic Island en haut de l'écran : il les avale, affiche la progression, puis « Planche reçue ».
   async function playCricutLaunch() {
     const preview = $('cricut-preview');
     if (!preview.src || preview.hidden || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -1435,81 +1436,83 @@
     const wrap = $('cricut-bot-wrap');
     wrap.scrollIntoView({ block: 'nearest' });
     const botBox = $('cricut-bot').getBoundingClientRect();
-    const photoBox = preview.getBoundingClientRect();
-    if (!botBox.width || !photoBox.width) return;
+    const photo = preview.getBoundingClientRect();
+    if (!botBox.width || !photo.width) return;
 
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
     const at = (x, y, extra = '') => `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) translate(-50%,-50%) ${extra}`;
-    const ratio = image.naturalHeight / image.naturalWidth || 1;
-    const cardW = 76;
-    const cardH = Math.round(Math.min(100, Math.max(46, cardW * ratio)));
     const start = { x: botBox.left + botBox.width / 2, y: botBox.top + botBox.height / 2 };
-    const hop = { x: start.x, y: start.y - 30 };
-    const hold = 38 + cardH / 2;  // la planche est tenue au-dessus de sa tête
-    const sky = { x: innerWidth / 2, y: cardH * 0.6 + 84 };  // tout en haut : là où la planche se décompose
-    // Il descend au milieu de l'écran pour prendre son élan, puis lance la planche vers le haut.
-    const top = { x: innerWidth / 2, y: Math.max(sky.y + hold + 120, innerHeight * 0.6) };
-    const middle = { x: Math.min(innerWidth - 60, (start.x + top.x) / 2 + 70), y: (hop.y + top.y) / 2 - 20 };
-    const total = 3200;
+    const center = { x: photo.left + photo.width / 2, y: photo.top + photo.height / 2 };
+    const under = { x: center.x, y: Math.min(innerHeight - 50, photo.bottom + 18) };
+    const lift = 34;  // la planche monte de 34 px quand il la pousse
 
     const layer = document.createElement('div');
     layer.className = 'cricut-launch';
-    layer.innerHTML = '<div class="launch-vm"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg><span>VM NathGPT</span></div>';
     const card = document.createElement('div');
     card.className = 'launch-card';
-    card.style.cssText = `width:${cardW}px;height:${cardH}px`;
+    card.style.cssText = `left:${photo.left}px;top:${photo.top}px;width:${photo.width}px;height:${photo.height}px`;
     card.append(image);
+    const island = document.createElement('div');
+    island.className = 'launch-island';
+    island.innerHTML = '<span class="island-ring"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle class="island-arc" cx="12" cy="12" r="9" pathLength="100"/><path class="island-check" d="m7.5 12.3 3 3 6-6.3"/></svg></span><span class="island-text"><b>Envoi à la VM</b><small>0 %</small></span>';
     const flyer = document.createElement('div');
     flyer.className = 'launch-flyer';
     // Le bot est dessiné dans un canvas : on fait voler le vrai (une copie serait vide), puis il retourne dans sa case.
     const bot = $('cricut-bot');
     flyer.append(bot);
-    layer.append(card, flyer);
+    layer.append(card, flyer, island);
     document.body.append(layer);
     wrap.classList.add('is-away');
     preview.classList.add('is-taken');
+    requestAnimationFrame(() => island.classList.add('is-open'));
 
-    const scale0 = Math.min(photoBox.width / cardW, photoBox.height / cardH);
-    flyer.animate([
-      { offset: 0, transform: at(start.x, start.y) },
-      { offset: 0.06, transform: at(start.x, start.y + 4, 'scale(1.12,.86)') },
-      { offset: 0.14, transform: at(hop.x, hop.y - 8, 'scale(.94,1.08)') },
-      { offset: 0.21, transform: at(hop.x, hop.y) },
-      { offset: 0.36, transform: at(middle.x, middle.y, 'rotate(8deg)') },
-      { offset: 0.52, transform: at(top.x, top.y, 'rotate(-5deg)') },
-      { offset: 0.57, transform: at(top.x, top.y + 10, 'scale(1.1,.88)') },
-      { offset: 0.62, transform: at(top.x, top.y - 16, 'scale(.94,1.08)') },
-      { offset: 0.68, transform: at(top.x, top.y) },
-      { offset: 0.93, transform: at(start.x, start.y, 'rotate(-6deg)') },
-      { offset: 0.97, transform: at(start.x, start.y + 3, 'scale(1.08,.92)') },
-      { offset: 1, transform: at(start.x, start.y) },
-    ], { duration: total, easing: 'ease-in-out', fill: 'both' });
-    card.animate([
-      { offset: 0, transform: at(photoBox.left + photoBox.width / 2, photoBox.top + photoBox.height / 2, `scale(${scale0.toFixed(3)})`) },
-      { offset: 0.21, transform: at(hop.x, hop.y - hold, 'rotate(-4deg)') },
-      { offset: 0.36, transform: at(middle.x, middle.y - hold, 'rotate(6deg)') },
-      { offset: 0.52, transform: at(top.x, top.y - hold, 'rotate(-3deg)') },
-      { offset: 0.57, transform: at(top.x, top.y + 10 - hold, 'rotate(0)') },
-      { offset: 0.62, transform: at(top.x, top.y - 16 - hold, 'rotate(0)') },
-      { offset: 0.7, transform: at(sky.x, sky.y, 'scale(1.15) rotate(-6deg)'), easing: 'ease-out' },
-      { offset: 1, transform: at(sky.x, sky.y, 'scale(1.15) rotate(0)') },
-    ], { duration: total, easing: 'ease-in-out', fill: 'both' });
-    card.animate([{ opacity: 1, offset: 0 }, { opacity: 1, offset: 0.71 }, { opacity: 0, offset: 0.76 }, { opacity: 0, offset: 1 }], { duration: total, fill: 'both' });
+    const comeBack = () => {
+      if (!wrap.contains(bot)) wrap.prepend(bot);
+      wrap.classList.remove('is-away');
+    };
+    try {
+      // 1) Il sort de sa case, file sous la planche et la pousse vers le haut, puis rentre chez lui.
+      const side = { x: (start.x + under.x) / 2 + 60, y: (start.y + under.y) / 2 };
+      flyer.animate([
+        { offset: 0, transform: at(start.x, start.y) },
+        { offset: 0.06, transform: at(start.x, start.y + 4, 'scale(1.12,.86)') },
+        { offset: 0.14, transform: at(start.x, start.y - 38, 'scale(.94,1.08)') },
+        { offset: 0.26, transform: at(side.x, side.y, 'rotate(10deg)') },
+        { offset: 0.4, transform: at(under.x, under.y, 'rotate(-4deg)') },
+        { offset: 0.45, transform: at(under.x, under.y + 8, 'scale(1.12,.86)') },
+        { offset: 0.5, transform: at(under.x, under.y - 18, 'scale(.92,1.1)') },
+        { offset: 0.56, transform: at(under.x, under.y) },
+        { offset: 0.8, transform: at(start.x, start.y - 30, 'rotate(-8deg)') },
+        { offset: 0.92, transform: at(start.x, start.y + 3, 'scale(1.08,.92)') },
+        { offset: 1, transform: at(start.x, start.y) },
+      ], { duration: 2600, easing: 'ease-in-out', fill: 'both' });
+      card.animate([
+        { offset: 0, transform: 'translateY(0)' },
+        { offset: 0.45, transform: 'translateY(0)' },
+        { offset: 0.54, transform: `translateY(${-lift}px) perspective(700px) rotateX(10deg)`, easing: 'cubic-bezier(.2,1.6,.4,1)' },
+        { offset: 1, transform: `translateY(${-lift}px) perspective(700px) rotateX(0)` },
+      ], { duration: 2600, fill: 'both' });
+      setTimeout(comeBack, 2650);
+      await wait(1450);
 
-    // Décomposition en binaire : une grille de 0/1, chaque chiffre a la couleur de son morceau d'image.
-    setTimeout(() => {
-      const cols = 16;
-      const rows = Math.max(8, Math.min(22, Math.round(cols * cardH / cardW)));
+      // 2) La planche se change en 0 et 1, de haut en bas, chaque chiffre de la couleur de son morceau d'image.
+      let cell = Math.max(9, photo.width / 32);
+      while ((photo.width / cell) * (photo.height / cell) > 900) cell += 1;
+      const cols = Math.max(4, Math.round(photo.width / cell));
+      const rows = Math.max(4, Math.round(photo.height / cell));
       const canvas = document.createElement('canvas');
       canvas.width = cols; canvas.height = rows;
       const context = canvas.getContext('2d', { willReadFrequently: true });
       context.drawImage(image, 0, 0, cols, rows);
       let pixels = null;
       try { pixels = context.getImageData(0, 0, cols, rows).data; } catch { /* image illisible : chiffres violets */ }
-      const w = cardW * 1.15, h = cardH * 1.15;
-      const cellW = w / cols, cellH = h / rows;
-      const vm = layer.querySelector('.launch-vm').getBoundingClientRect();
-      const target = { x: vm.left + vm.width / 2, y: vm.top + vm.height / 2 };
+      const target = island.getBoundingClientRect();
+      const mouth = { x: target.left + target.width / 2, y: target.top + 18 };
+      const sweep = 650;
+      card.animate([{ clipPath: 'inset(0 0 0 0)' }, { clipPath: 'inset(100% 0 0 0)' }], { duration: sweep, easing: 'linear', fill: 'forwards' });
+      const cellW = photo.width / cols, cellH = photo.height / rows;
       const bits = [];
+      let firstArrival = Infinity, lastArrival = 0;
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
           const bit = document.createElement('i');
@@ -1519,38 +1522,65 @@
           if (pixels) {
             const k = (row * cols + col) * 4;
             let [r, g, b] = [pixels[k], pixels[k + 1], pixels[k + 2]];
-            const light = 0.299 * r + 0.587 * g + 0.114 * b;
-            if (light < 90) [r, g, b] = [r, g, b].map((v, i) => Math.round(v + ([196, 181, 253][i] - v) * 0.55));  // trop sombre sur fond noir
+            if (pixels[k + 3] < 40) [r, g, b] = [196, 181, 253];  // zone transparente
+            else if (0.299 * r + 0.587 * g + 0.114 * b < 80) [r, g, b] = [r, g, b].map((v, i) => Math.round(v + ([196, 181, 253][i] - v) * 0.5));
             color = `rgb(${r},${g},${b})`;
           }
-          bit.style.cssText = `color:${color};font-size:${Math.max(8, Math.min(cellW, cellH) * 1.35).toFixed(1)}px`;
-          const x = sky.x - w / 2 + (col + 0.5) * cellW;
-          const y = sky.y - h / 2 + (row + 0.5) * cellH;
-          const tx = target.x + (Math.random() - 0.5) * 70;
-          const ty = target.y + (Math.random() - 0.5) * 14;
-          const driftX = x + (x - sky.x) * 0.8 + (Math.random() - 0.5) * 30;  // la planche « explose » un peu
-          const driftY = y + (y - sky.y) * 0.8 + 8 + Math.random() * 16;
+          bit.style.cssText = `color:${color};font-size:${(Math.min(cellW, cellH) * 1.15).toFixed(1)}px`;
+          const x = photo.left + (col + 0.5) * cellW;
+          const y = photo.top - lift + (row + 0.5) * cellH;
+          const appear = (row / rows) * sweep;
+          const hold = 160 + Math.random() * 260;
+          const travel = 650 + Math.random() * 450;
+          const total = hold + travel;
+          firstArrival = Math.min(firstArrival, appear + total);
+          lastArrival = Math.max(lastArrival, appear + total);
+          // Petit écart sur le côté puis aspiration vers l'île, en rétrécissant.
+          const curveX = x + (mouth.x - x) * 0.35 + (Math.random() - 0.5) * 60;
+          const curveY = y + (mouth.y - y) * 0.45;
           bit.animate([
-            { transform: at(x, y, 'scale(.3)'), opacity: 0 },
-            { offset: 0.12, transform: at(x, y, 'scale(1)'), opacity: 1 },
-            { offset: 0.4, transform: at(driftX, driftY, `rotate(${Math.round((Math.random() - 0.5) * 90)}deg)`), opacity: 1 },
-            { transform: at(tx, ty, `rotate(${Math.round((Math.random() - 0.5) * 360)}deg) scale(.5)`), opacity: 0 },
-          ], { duration: 1050 + Math.random() * 450, delay: (rows - row) * 28 + Math.random() * 120, easing: 'cubic-bezier(.45,0,.55,1)', fill: 'both' });
+            { transform: at(x, y, 'scale(.4)'), opacity: 0 },
+            { offset: 0.08, transform: at(x, y, 'scale(1.15)'), opacity: 1 },
+            { offset: hold / total, transform: at(x, y, 'scale(1)'), opacity: 1 },
+            { offset: hold / total + (1 - hold / total) * 0.55, transform: at(curveX, curveY, `scale(.8) rotate(${Math.round((Math.random() - 0.5) * 120)}deg)`), opacity: 1 },
+            { transform: at(mouth.x + (Math.random() - 0.5) * 30, mouth.y, 'scale(.25)'), opacity: 0.2 },
+          ], { duration: total, delay: appear, easing: 'cubic-bezier(.55,0,.75,.4)', fill: 'both' });
           bits.push(bit);
         }
       }
-      layer.append(...bits);
-      const flicker = setInterval(() => { for (const bit of bits) if (Math.random() < 0.2) bit.textContent = bit.textContent === '0' ? '1' : '0'; }, 90);
-      setTimeout(() => layer.querySelector('.launch-vm')?.classList.add('is-hit'), 1000);
-      setTimeout(() => clearInterval(flicker), 1900);
-    }, total * 0.7);
+      for (const bit of bits) layer.insertBefore(bit, island);  // les chiffres passent sous l'île
+      const flicker = setInterval(() => { for (const bit of bits) if (Math.random() < 0.15) bit.textContent = bit.textContent === '0' ? '1' : '0'; }, 90);
 
-    await new Promise((resolve) => setTimeout(resolve, total + 150));
-    wrap.prepend(bot);
-    wrap.classList.remove('is-away');
-    preview.classList.remove('is-taken');
-    layer.classList.add('is-leaving');
-    setTimeout(() => layer.remove(), 400);
+      // 3) L'île avale les chiffres : elle s'élargit, pulse et affiche la progression, puis « Planche reçue ».
+      const label = island.querySelector('small');
+      const began = performance.now();
+      await wait(Math.max(0, firstArrival - 60));
+      island.classList.add('is-eating');
+      await new Promise((resolve) => {
+        const tick = () => {
+          const elapsed = performance.now() - began;
+          const percent = Math.min(100, Math.max(0, Math.round((elapsed - firstArrival) / Math.max(1, lastArrival - firstArrival) * 100)));
+          label.textContent = `${percent} %`;
+          island.style.setProperty('--progress', percent);
+          if (elapsed >= lastArrival) resolve(); else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      clearInterval(flicker);
+      for (const bit of bits) bit.remove();
+      island.classList.remove('is-eating');
+      island.classList.add('is-done');
+      island.querySelector('b').textContent = 'Planche reçue';
+      label.textContent = 'VM NathGPT';
+      await wait(1300);
+      island.classList.remove('is-done', 'is-open');
+      island.classList.add('is-closing');
+      await wait(450);
+    } finally {
+      comeBack();
+      preview.classList.remove('is-taken');
+      layer.remove();
+    }
   }
   $('cricut-start').addEventListener('click', async () => {
     if (!cricutFile) return;

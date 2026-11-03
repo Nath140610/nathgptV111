@@ -511,23 +511,36 @@ input::-ms-reveal,input::-ms-clear{display:none}
 @keyframes confetto{0%{opacity:1;transform:translate(0,0) rotate3d(1,.6,.2,0)}70%{opacity:1}100%{opacity:0;transform:translate(var(--x),calc(var(--y) + 30px)) rotate3d(1,.6,.2,var(--r))}}
 @keyframes cricut-shake{25%{transform:translateX(-4px) rotate(-4deg)}75%{transform:translateX(4px) rotate(4deg)}}
 
-/* Envoi à la VM : le bot sort de sa case, emporte la planche et la lance (elle se décompose en binaire) */
+/* Envoi à la VM : le bot pousse la planche, elle se change en 0/1 qui filent dans un Dynamic Island */
 .cricut-bot-wrap.is-away .cricut-bot,.cricut-bot-wrap.is-away .cricut-props{visibility:hidden}
 .cricut-bot-wrap.is-away::after{content:"";position:absolute;inset:8px;border:2px dashed #a78bfa99;border-radius:24px;animation:case-glow 1s ease-in-out infinite}
 #cricut-preview.is-taken{visibility:hidden}
-.cricut-launch{position:fixed;inset:0;z-index:300;overflow:hidden;pointer-events:none;perspective:600px;transition:opacity .35s}
-.cricut-launch.is-leaving{opacity:0}
-.launch-flyer,.launch-card,.launch-bit{position:absolute;left:0;top:0;will-change:transform}
+.cricut-launch{position:fixed;inset:0;z-index:300;overflow:hidden;pointer-events:none}
+.launch-flyer,.launch-bit{position:absolute;left:0;top:0;will-change:transform}
 .launch-flyer{display:grid;place-items:center;width:84px;height:84px;filter:drop-shadow(0 12px 14px #000a)}
 .launch-flyer .cricut-bot{width:84px;height:84px}
-.launch-card{overflow:hidden;border:2px solid #fff;border-radius:10px;background:#fff;box-shadow:0 14px 30px #000a}
-.launch-card img{display:block;width:100%;height:100%;object-fit:cover}
-.launch-bit{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-style:normal;line-height:1;text-shadow:0 0 6px currentColor}
-.launch-vm{position:absolute;left:50%;top:calc(env(safe-area-inset-top) + 12px);display:flex;align-items:center;gap:6px;padding:7px 12px;border:1px solid #a78bfa66;border-radius:999px;background:#15161cf0;color:#e9e3ff;font:700 12px/1 system-ui,sans-serif;box-shadow:0 0 24px #a78bfa44;transform:translateX(-50%);animation:vm-in .45s cubic-bezier(.3,1.5,.5,1) both}
-.launch-vm.is-hit{animation:vm-hit .6s ease-out both}
+.launch-card{position:absolute;overflow:hidden;border-radius:4px;box-shadow:0 18px 40px #000a;will-change:transform}
+.launch-card img{display:block;width:100%;height:100%}
+.launch-bit{font-family:ui-monospace,Menlo,monospace;font-weight:800;font-style:normal;line-height:1;text-shadow:0 0 5px currentColor}
+.launch-island{position:absolute;left:50%;top:11px;z-index:2;display:flex;align-items:flex-end;gap:9px;box-sizing:border-box;width:126px;height:37px;padding:0 16px 10px;overflow:hidden;border-radius:20px;background:#000;opacity:0;transform:translateX(-50%) scale(.6);transition:width .45s cubic-bezier(.3,1.35,.5,1),height .45s cubic-bezier(.3,1.35,.5,1),border-radius .45s,transform .45s cubic-bezier(.3,1.35,.5,1),opacity .3s,box-shadow .35s}
+.launch-island.is-open{opacity:1;transform:translateX(-50%) scale(1)}
+.launch-island.is-eating,.launch-island.is-done{width:214px;height:72px;border-radius:30px}
+.launch-island.is-eating{box-shadow:0 0 0 1px #a78bfa55,0 0 28px #a78bfa88;animation:island-gulp .3s ease-in-out infinite}
+.launch-island.is-done{box-shadow:0 0 0 1px #30d15866,0 0 28px #30d15877}
+.launch-island.is-closing{opacity:0;transform:translateX(-50%) scale(.85)}
+.island-ring,.island-text{opacity:0;transition:opacity .25s}
+.is-eating .island-ring,.is-eating .island-text,.is-done .island-ring,.is-done .island-text{opacity:1;transition-delay:.15s}
+.island-ring svg{display:block;width:26px;height:26px;fill:none;stroke-width:2.6;stroke-linecap:round}
+.island-ring circle{stroke:#ffffff22}
+.island-ring .island-arc{stroke:#a78bfa;stroke-dasharray:var(--progress,0) 100;transform:rotate(-90deg);transform-origin:center;transition:stroke .3s}
+.island-check{stroke:#30d158;stroke-dasharray:20;stroke-dashoffset:20;transition:stroke-dashoffset .4s .1s}
+.is-done .island-arc{stroke:#30d158;stroke-dasharray:100 100}
+.is-done .island-check{stroke-dashoffset:0}
+.island-text{display:flex;flex-direction:column;gap:2px;min-width:0;white-space:nowrap}
+.island-text b{color:#fff;font:650 13.5px/1.1 system-ui,sans-serif}
+.island-text small{color:#a1a1aa;font:500 11.5px/1.1 system-ui,sans-serif;font-variant-numeric:tabular-nums}
 @keyframes case-glow{50%{border-color:#f0abfcaa;box-shadow:0 0 18px #a78bfa55}}
-@keyframes vm-in{from{opacity:0;transform:translate(-50%,-18px) scale(.7)}}
-@keyframes vm-hit{0%{transform:translateX(-50%) scale(1)}35%{transform:translateX(-50%) scale(1.14);box-shadow:0 0 34px #a78bfaaa;border-color:#f0abfc}100%{transform:translateX(-50%) scale(1)}}
+@keyframes island-gulp{50%{transform:translateX(-50%) scale(1.045)}}
 
 @media (prefers-reduced-motion:reduce){.cricut-props *,.cricut-bot-wrap .cricut-bot{animation:none!important}.confetto,.heart,.zzz,.paper{display:none}}
 
