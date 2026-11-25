@@ -72,6 +72,58 @@ sur la VM et sont supprimés 10 minutes après le téléchargement complet (48 h
 Notifications push (stickers prêts, même app fermée) : ajouter dans Render `VAPID_PUBLIC_KEY` et `VAPID_PRIVATE_KEY`
 (générées dans `VAPID_RENDER.local.txt`, jamais committé). Sur iPhone, il faut l'app sur l'écran d'accueil (iOS 16.4+).
 
+## API développeur (scripts et autres applications)
+
+Une autre application peut appeler NathGPT avec une clé personnelle `ngt_…` liée à un compte.
+
+> **Supabase :** relancez [`supabase/schema.sql`](supabase/schema.sql) une fois. Il crée la table `nathgpt_api_keys`, et ne supprime rien.
+
+**1. Obtenir un token** (pseudo + mot de passe du compte, une seule fois) :
+
+```bash
+curl -X POST https://VOTRE-SITE/v1/auth/token \
+  -H "Content-Type: application/json" \
+  -d '{"pseudo": "nath", "password": "...", "name": "Mon bot"}'
+# → 201 {"token": "ngt_…", "id": "key_…", "token_type": "Bearer"}
+```
+
+Le token n'est affiché qu'une fois : seul son SHA-256 est stocké. Ensuite, l'application envoie `Authorization: Bearer ngt_…` et n'a plus besoin du mot de passe.
+
+**2. Routes**
+
+| Route | Rôle |
+|---|---|
+| `POST /v1/auth/token` | Crée une clé (5 actives maximum par compte) |
+| `GET /v1/auth/keys` | Liste les clés du compte |
+| `DELETE /v1/auth/token` | Révoque la clé utilisée pour l'appel |
+| `POST /v1/chat/completions` | Réponse texte, format OpenAI (`messages`), sans streaming. `conversation_id` optionnel pour continuer une conversation |
+| `POST /v1/images/generations` | Une image, renvoyée en `b64_json` |
+| `GET /v1/usage` | Compteur d'économies du compte (le même que sur le site) |
+| `GET /v1/models` | `nathgpt`, `nathgpt-image` |
+
+Les erreurs suivent le format OpenAI (`{"error": {"message", "code"}}`). Les limites du site s'appliquent aussi : 10 demandes de token par minute (par IP et par pseudo), 12 requêtes par minute par clé et 3 générations simultanées au total.
+
+**3. Script prêt à l'emploi :** [`scripts/nathgpt_client.py`](scripts/nathgpt_client.py), sans dépendance.
+
+```powershell
+python scripts/nathgpt_client.py login --url https://VOTRE-SITE -u nath   # demande le mot de passe
+python scripts/nathgpt_client.py chat "Bonjour NathGPT"
+python scripts/nathgpt_client.py image "Un chat vert" -o chat.png
+python scripts/nathgpt_client.py usage
+python scripts/nathgpt_client.py logout                                   # révoque le token
+```
+
+Le token est enregistré dans `~/.nathgpt.json`. `NATHGPT_URL` et `NATHGPT_API_KEY` sont prioritaires ; `NATHGPT_PASSWORD` évite la question du mot de passe. Depuis Python :
+
+```python
+from nathgpt_client import NathGPT
+
+api = NathGPT.login("https://VOTRE-SITE", "nath", "mot de passe")  # puis gardez api.api_key
+print(api.chat("Bonjour"))
+```
+
+Le SDK OpenAI fonctionne aussi : `OpenAI(api_key="ngt_…", base_url="https://VOTRE-SITE/v1")`.
+
 ## Sécurité
 
 - Mots de passe hachés côté serveur (scrypt), 10 tentatives de connexion par minute et par IP.

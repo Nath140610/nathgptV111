@@ -59,6 +59,22 @@ create table if not exists public.nathgpt_sessions (
 create index if not exists nathgpt_sessions_account_idx on public.nathgpt_sessions (account_key);
 create index if not exists nathgpt_sessions_expires_idx on public.nathgpt_sessions (expires_at);
 
+-- Clés API développeur (ngt_…) pour les scripts : seul le SHA-256 de la clé est stocké.
+create table if not exists public.nathgpt_api_keys (
+  id           text primary key check (id ~ '^key_[a-f0-9]{16}$'),
+  account_key  text not null references public.nathgpt_accounts(key) on delete cascade,
+  name         text not null check (char_length(name) between 1 and 40),
+  prefix       text not null,
+  key_hash     text not null unique,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz,
+  revoked_at   timestamptz
+);
+create index if not exists nathgpt_api_keys_account_idx on public.nathgpt_api_keys (account_key);
+alter table public.nathgpt_api_keys enable row level security;
+revoke all on public.nathgpt_api_keys from anon, authenticated;
+grant select, insert, update, delete on public.nathgpt_api_keys to service_role;
+
 -- Conversations (historique synchronisé entre appareils). Dates en millisecondes, comme le site.
 create table if not exists public.nathgpt_conversations (
   id          text primary key check (id ~ '^[A-Za-z0-9_-]{8,128}$'),
