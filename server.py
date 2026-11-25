@@ -21,10 +21,12 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from services.nathgpt_client import NathGPTClient, SSEProtocolError, UpstreamStatusError
-from services.store import IMAGE_TYPES, SQLiteStore, StoreError, SupabaseStore, hash_password, image_folder, verify_password
+from services.store import IMAGE_TYPES, MAX_API_KEYS, SQLiteStore, StoreError, SupabaseStore, hash_password, image_folder, verify_password
 
 
 SITE_DIR = Path(__file__).resolve().parent
@@ -37,6 +39,10 @@ MAX_MESSAGES = 500
 CONVERSATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 IMAGE_NAME_RE = re.compile(r"^[a-f0-9]{32}\.(png|jpg|webp)$")
 JOB_ID_RE = re.compile(r"^[a-f0-9]{32}$")
+API_KEY_RE = re.compile(r"^ngt_[A-Za-z0-9_-]{20,100}$")
+API_ERROR_CODES = {400: "invalid_request", 401: "invalid_api_key", 403: "permission_denied", 404: "not_found",
+                   409: "conflict", 413: "request_too_large", 415: "invalid_request", 429: "rate_limit_exceeded"}
+API_ROLE_LABELS = {"system": "Instructions", "developer": "Instructions", "user": "Utilisateur", "assistant": "NathGPT"}
 CRICUT_FILE_RE = re.compile(r"^(sticker_\d{2}\.png|planche_numerotee\.png)$")
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_FILES = 5
@@ -280,6 +286,39 @@ def read_credentials(payload: dict) -> tuple[str, str, str]:
         raise HTTPException(400, detail="Le mot de passe doit contenir au moins 8 caractères.")
     pseudo = pseudo.strip()
     return pseudo, pseudo.casefold(), password
+
+
+def api_prompt(messages) -> str:
+    """Messages au format OpenAI -> un seul prompt pour la VM (le dernier message utilisateur est toujours gardé)."""
+    if not isinstance(messages, list) or not messages:
+        raise HTTPException(400, detail="Champ messages requis : [{\"role\": \"user\", \"content\": \"…\"}].")
+    turns: list[tuple[str, str]] = []
+    for message in messages[-MAX_MESSAGES:]:
+        if not isinstance(message, dict):
+            raise HTTPException(400, detail="Message invalide.")
+        content = message.get("content")
+        if isinstance(content, list):  # [{"type": "text", "text": "…"}]
+            content = "\n".join(part.get("text", "") for part in content if isinstance(part, dict) and isinstance(part.get("text"), str))
+        if isinstance(content, str) and content.strip():
+            turns.append((str(message.get("role") or "user"), content.strip()))
+    if not turns or turns[-1][0] != "user":
+        raise HTTPException(400, detail="Le dernier message doit venir de l'utilisateur (role: user).")
+    if len(turns) == 1:
+        prompt = turns[0][1]
+    else:
+        last = f"{API_ROLE_LABELS['user']} : {turns[-1][1]}"
+        context: list[str] = []
+        size = len(last)
+        for role, text in reversed(turns[:-1]):  # contexte le plus récent d'abord, dans la limite de taille
+            line = f"{API_ROLE_LABELS.get(role, role)} : {text}"
+            if size + len(line) + 2 > MAX_PROMPT_CHARS:
+                break
+            context.insert(0, line)
+            size += len(line) + 2
+        prompt = "\n\n".join([*context, last])
+    if len(prompt) > MAX_PROMPT_CHARS:
+        raise HTTPException(413, detail="Message trop long.")
+    return prompt
 
 
 def settings_from_env() -> Settings:
@@ -1000,6 +1039,172 @@ def create_app(settings: Settings | None = None, *, transport: httpx.AsyncBaseTr
         if not job:
             raise HTTPException(404, detail="Réponse introuvable.")
         return job.summary()
+
+    # ----- API développeur /v1 : clés ngt_ pour les scripts et les autres applications -----
+    # Authentification par « Authorization: Bearer ngt_… » (pas de cookie, donc pas de CSRF).
+    api_token_gate = AuthGate()  # 10 demandes de token par minute et par pseudo, en plus de la limite par IP
+
+    @app.exception_handler(StarletteHTTPException)
+    async def v1_errors(request: Request, error: StarletteHTTPException):
+        """Erreurs /v1 au format OpenAI ({"error": {...}}) ; le reste du site garde {"detail": ...}."""
+        if not request.url.path.startswith("/v1/"):
+            return await http_exception_handler(request, error)
+        code = API_ERROR_CODES.get(error.status_code, "upstream_error" if error.status_code >= 500 else "invalid_request")
+        return JSONResponse({"error": {"message": str(error.detail), "type": code, "code": code}},
+                            status_code=error.status_code, headers=getattr(error, "headers", None))
+
+    async def api_account(request: Request) -> dict:
+        authorization = request.headers.get("authorization", "")
+        raw = authorization[7:].strip() if authorization[:7].lower() == "bearer " else ""
+        if not API_KEY_RE.fullmatch(raw):
+            raise HTTPException(401, detail="Ajoutez l'en-tête Authorization: Bearer ngt_… (POST /v1/auth/token pour en obtenir un).")
+        account = await store.api_key_account(raw)
+        if not account:
+            raise HTTPException(401, detail="Clé API NathGPT invalide ou révoquée.")
+        return account
+
+    @app.post("/v1/auth/token")
+    async def api_create_token(request: Request):
+        auth_gate.check(client_ip(request))
+        payload = await read_json_body(request, 4096)
+        payload.setdefault("pseudo", payload.get("username"))
+        _pseudo, key, password = read_credentials(payload)
+        api_token_gate.check(key)
+        name = " ".join(str(payload.get("name") or "Script API").split())[:40] or "Script API"
+        saved = await store.get_account(key)
+        if not saved or not await asyncio.to_thread(verify_password, saved["password_hash"], password):
+            raise HTTPException(401, detail="Pseudo ou mot de passe incorrect.")
+        created = await store.create_api_key(key, name)
+        if not created:
+            raise HTTPException(409, detail=f"{MAX_API_KEYS} clés actives maximum : révoquez-en une (DELETE /v1/auth/token) avant d'en créer une autre.")
+        return JSONResponse({"object": "nathgpt.api_key", "id": created["id"], "name": name, "account": key, "token": created["token"],
+                             "token_type": "Bearer", "note": "Conservez ce token : il ne sera plus jamais affiché."}, status_code=201)
+
+    @app.get("/v1/auth/keys")
+    async def api_list_keys(request: Request):
+        account = await api_account(request)
+        return {"object": "list", "current_key_id": account["api_key_id"], "data": await store.list_api_keys(account["key"])}
+
+    @app.delete("/v1/auth/token")
+    async def api_revoke_token(request: Request):
+        """Révoque la clé utilisée pour cet appel (déconnexion du script)."""
+        account = await api_account(request)
+        await store.revoke_api_key(account["key"], account["api_key_id"])
+        return {"object": "nathgpt.api_key", "id": account["api_key_id"], "revoked": True}
+
+    @app.get("/v1/models")
+    async def api_models(request: Request):
+        await api_account(request)
+        return {"object": "list", "data": [
+            {"id": "nathgpt", "object": "model", "owned_by": "nathgpt", "capabilities": ["chat"]},
+            {"id": "nathgpt-image", "object": "model", "owned_by": "nathgpt", "capabilities": ["image_generation"]},
+        ]}
+
+    @app.get("/v1/usage")
+    async def api_usage(request: Request):
+        account = await api_account(request)
+        tokens = account["tokens_used"]
+        return {"object": "nathgpt.usage", "account": account["key"], "tokens_used": tokens,
+                "saved_eur": round(tokens * PRICE_PER_TOKEN_EUR, 4), "usage_estimated": account["usage_estimated"]}
+
+    async def api_generate(request: Request, account: dict, prompt: str, conversation_id: str, *, image: bool) -> dict:
+        """Envoie la demande à la VM et attend la réponse complète (pas de streaming côté API)."""
+        if not client.token:
+            raise HTTPException(503, detail="NathGPT API n'est pas configurée sur ce serveur.")
+        gate_id = "api:" + account["api_key_id"]
+        await gate.acquire(gate_id, client_ip(request))
+        answer, images, done, failure = "", [], {}, None
+        try:
+            try:
+                http_client, upstream = await client.open_stream(prompt, conversation_id, image=image)
+            except UpstreamStatusError as error:
+                raise upstream_error(error.status_code) from None
+            except httpx.TimeoutException:
+                raise HTTPException(504, detail="NathGPT a mis trop de temps à répondre.") from None
+            except (httpx.HTTPError, SSEProtocolError):
+                raise HTTPException(502, detail="Impossible de joindre NathGPT.") from None
+            try:
+                async with asyncio.timeout(360):
+                    async for kind, data in client.events(upstream):
+                        if kind == "delta":
+                            answer += data.get("text", "")
+                        elif kind == "replace":
+                            answer = data.get("text", "")
+                        elif kind == "image":
+                            decoded = decode_image(data)
+                            if decoded:
+                                images.append({"b64_json": base64.b64encode(decoded[0]).decode(), "mime_type": decoded[1]})
+                        elif kind == "done":
+                            done = data
+                            break
+                        elif kind == "error":
+                            failure = data.get("message") or "NathGPT a interrompu la réponse."
+                            break
+            except (TimeoutError, httpx.TimeoutException):
+                raise HTTPException(504, detail="NathGPT a mis trop de temps à répondre.") from None
+            except (httpx.HTTPError, SSEProtocolError):
+                raise HTTPException(502, detail="Connexion à NathGPT interrompue.") from None
+            finally:
+                await upstream.aclose()
+                await http_client.aclose()
+        finally:
+            await gate.release(gate_id)
+        if failure:
+            raise HTTPException(502, detail=failure)
+
+        exact = done.get("total_tokens")
+        prompt_tokens, completion_tokens = estimate_tokens(prompt), estimate_tokens(answer)
+        total = exact if isinstance(exact, int) else prompt_tokens + completion_tokens
+        if answer.strip():  # même compteur d'économies que le site
+            with contextlib.suppress(StoreError):
+                await store.add_usage(account["key"], total, not isinstance(exact, int))
+        await charge_images(account["key"], len(images))
+        return {"answer": answer, "images": images,
+                "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens, "total_tokens": total}}
+
+    @app.post("/v1/chat/completions")
+    async def api_chat_completions(request: Request):
+        account = await api_account(request)
+        payload = await read_json_body(request)
+        if payload.get("stream") is True:
+            raise HTTPException(400, detail="Le streaming n'est pas encore disponible sur l'API : envoyez stream=false.")
+        prompt = api_prompt(payload.get("messages"))
+        model = str(payload.get("model") or "nathgpt")
+        conversation_id = payload.get("conversation_id")
+        if conversation_id is None:
+            conversation_id = "api-" + uuid.uuid4().hex
+        elif not isinstance(conversation_id, str) or not CONVERSATION_RE.fullmatch(conversation_id):
+            raise HTTPException(400, detail="Identifiant de conversation invalide.")
+        if not await store.claim_conversation(account["key"], conversation_id):
+            raise HTTPException(403, detail="Cette conversation appartient à un autre compte.")
+        result = await api_generate(request, account, prompt, conversation_id, image=False)
+        response = {
+            "id": "chatcmpl-" + uuid.uuid4().hex, "object": "chat.completion", "created": int(time.time()),
+            "model": model, "conversation_id": conversation_id,
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": result["answer"]}, "finish_reason": "stop"}],
+            "usage": result["usage"],
+        }
+        if result["images"]:
+            response["images"] = result["images"]
+        return response
+
+    @app.post("/v1/images/generations")
+    async def api_images(request: Request):
+        account = await api_account(request)
+        payload = await read_json_body(request)
+        prompt = payload.get("prompt")
+        if not isinstance(prompt, str) or not prompt.strip():
+            raise HTTPException(400, detail="Champ prompt requis.")
+        if len(prompt) > MAX_PROMPT_CHARS:
+            raise HTTPException(413, detail="Prompt trop long.")
+        if payload.get("n", 1) != 1:
+            raise HTTPException(400, detail="Une seule image par requête (n=1).")
+        conversation_id = "api-" + uuid.uuid4().hex
+        await store.claim_conversation(account["key"], conversation_id)
+        result = await api_generate(request, account, prompt.strip(), conversation_id, image=True)
+        if not result["images"]:
+            raise HTTPException(502, detail="NathGPT n'a renvoyé aucune image.")
+        return {"created": int(time.time()), "data": result["images"][:1]}
 
     @app.get("/{filename:path}")
     async def static(filename: str):

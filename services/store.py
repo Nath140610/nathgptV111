@@ -8,6 +8,7 @@ supabase/schema.sql). Les identifiants de session ne sont stockés que hachés.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import hmac
 import json
@@ -28,6 +29,8 @@ IMAGE_TYPES = {'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp'}
 IMAGE_TTL_SECONDS = 60 * 60 * 4  # images générées gardées 4 h, puis supprimées
 PURGE_BATCH = 1000
 ROLES = ('cricut', 'is_admin')  # rôles qu'un admin peut donner
+API_KEY_PREFIX = 'ngt_'
+MAX_API_KEYS = 5  # clés actives par compte
 
 
 def image_folder(account_key: str) -> str:
@@ -66,6 +69,19 @@ def session_digest(sid: str) -> str:
     return hashlib.sha256(sid.encode()).hexdigest()
 
 
+def new_api_key() -> tuple[str, str]:
+    """(clé complète montrée une seule fois, identifiant public)."""
+    return API_KEY_PREFIX + secrets.token_urlsafe(32), 'key_' + secrets.token_hex(8)
+
+
+def api_key_summary(row: dict) -> dict:
+    return {
+        'id': row['id'], 'name': row['name'], 'prefix': row['prefix'],
+        'created_at': row.get('created_at'), 'last_used_at': row.get('last_used_at'),
+        'active': not row.get('revoked_at'),
+    }
+
+
 def public_account(row: dict) -> dict:
     return {
         'key': row['key'], 'pseudo': row['pseudo'],
@@ -96,6 +112,7 @@ class SQLiteStore:
                     db.execute(f'ALTER TABLE nathgpt_accounts ADD COLUMN {flag} INTEGER NOT NULL DEFAULT 0')
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_role_grants (id INTEGER PRIMARY KEY AUTOINCREMENT, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, role TEXT NOT NULL, grant_at REAL NOT NULL, created_by TEXT, created_at REAL NOT NULL, applied_at REAL, seen_at REAL)')
             db.execute('CREATE TABLE IF NOT EXISTS nathgpt_push_subscriptions (endpoint TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, p256dh TEXT NOT NULL, auth TEXT NOT NULL)')
+            db.execute('CREATE TABLE IF NOT EXISTS nathgpt_api_keys (id TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, name TEXT NOT NULL, prefix TEXT NOT NULL, key_hash TEXT NOT NULL UNIQUE, created_at REAL NOT NULL, last_used_at REAL, revoked_at REAL)')
             db.execute("CREATE TABLE IF NOT EXISTS nathgpt_conversations (id TEXT PRIMARY KEY, account_key TEXT NOT NULL REFERENCES nathgpt_accounts(key) ON DELETE CASCADE, title TEXT NOT NULL DEFAULT '', messages TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)")
 
     def _connect(self) -> sqlite3.Connection:
@@ -253,6 +270,49 @@ class SQLiteStore:
     async def revoke(self, sid: str | None) -> None:
         if sid:
             await self._run(self._revoke, sid)
+
+    # ----- Clés API développeur (seul le SHA-256 de la clé est stocké) -----
+    def _create_api_key(self, key, name):
+        raw, key_id = new_api_key()
+        with self.lock, self._connect() as db:
+            active = db.execute('SELECT COUNT(*) FROM nathgpt_api_keys WHERE account_key=? AND revoked_at IS NULL', (key,)).fetchone()[0]
+            if active >= MAX_API_KEYS:
+                return None
+            db.execute('INSERT INTO nathgpt_api_keys (id, account_key, name, prefix, key_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+                       (key_id, key, name, raw[:12] + '…', session_digest(raw), time.time()))
+        return {'id': key_id, 'token': raw}
+
+    async def create_api_key(self, key: str, name: str) -> dict | None:
+        """Nouvelle clé {id, token}, ou None si le compte a déjà MAX_API_KEYS clés actives."""
+        return await self._run(self._create_api_key, key, name)
+
+    def _api_key_account(self, raw):
+        with self.lock, self._connect() as db:
+            row = db.execute('SELECT a.*, k.id AS api_key_id FROM nathgpt_api_keys k JOIN nathgpt_accounts a ON a.key=k.account_key WHERE k.key_hash=? AND k.revoked_at IS NULL',
+                             (session_digest(raw),)).fetchone()
+            if not row:
+                return None
+            db.execute('UPDATE nathgpt_api_keys SET last_used_at=? WHERE id=?', (time.time(), row['api_key_id']))
+            return {**public_account(dict(row)), 'api_key_id': row['api_key_id']}
+
+    async def api_key_account(self, raw: str) -> dict | None:
+        return await self._run(self._api_key_account, raw)
+
+    def _list_api_keys(self, key):
+        with self.lock, self._connect() as db:
+            rows = db.execute('SELECT * FROM nathgpt_api_keys WHERE account_key=? ORDER BY created_at DESC', (key,)).fetchall()
+        return [api_key_summary(dict(row)) for row in rows]
+
+    async def list_api_keys(self, key: str) -> list[dict]:
+        return await self._run(self._list_api_keys, key)
+
+    def _revoke_api_key(self, key, key_id):
+        with self.lock, self._connect() as db:
+            return db.execute('UPDATE nathgpt_api_keys SET revoked_at=? WHERE id=? AND account_key=? AND revoked_at IS NULL',
+                              (time.time(), key_id, key)).rowcount > 0
+
+    async def revoke_api_key(self, key: str, key_id: str) -> bool:
+        return await self._run(self._revoke_api_key, key, key_id)
 
     def _claim(self, key, conversation_id):
         now = int(time.time() * 1000)
@@ -481,6 +541,38 @@ class SupabaseStore:
     async def revoke(self, sid) -> None:
         if sid:
             await self._request('DELETE', '/nathgpt_sessions', params={'id_hash': f'eq.{session_digest(sid)}'})
+
+    # ----- Clés API développeur (seul le SHA-256 de la clé est stocké) -----
+    async def create_api_key(self, key, name) -> dict | None:
+        active = (await self._request('GET', '/nathgpt_api_keys', params={'account_key': f'eq.{key}', 'revoked_at': 'is.null', 'select': 'id'})).json()
+        if len(active) >= MAX_API_KEYS:
+            return None
+        raw, key_id = new_api_key()
+        await self._request('POST', '/nathgpt_api_keys', json={'id': key_id, 'account_key': key, 'name': name, 'prefix': raw[:12] + '…', 'key_hash': session_digest(raw)},
+                            headers={'Prefer': 'return=minimal'})
+        return {'id': key_id, 'token': raw}
+
+    async def api_key_account(self, raw) -> dict | None:
+        rows = (await self._request('GET', '/nathgpt_api_keys', params={
+            'key_hash': f'eq.{session_digest(raw)}', 'revoked_at': 'is.null',
+            'select': 'id,account:nathgpt_accounts(key,pseudo,tokens_used,usage_estimated)',
+        })).json()
+        if not rows or not rows[0].get('account'):
+            return None
+        with contextlib.suppress(StoreError):  # date d'utilisation : indicative seulement
+            await self._request('PATCH', '/nathgpt_api_keys', params={'id': f'eq.{rows[0]["id"]}'}, json={'last_used_at': self._iso(time.time())},
+                                headers={'Prefer': 'return=minimal'})
+        return {**public_account(rows[0]['account']), 'api_key_id': rows[0]['id']}
+
+    async def list_api_keys(self, key) -> list[dict]:
+        rows = (await self._request('GET', '/nathgpt_api_keys', params={
+            'account_key': f'eq.{key}', 'select': 'id,name,prefix,created_at,last_used_at,revoked_at', 'order': 'created_at.desc'})).json()
+        return [api_key_summary(row) for row in rows]
+
+    async def revoke_api_key(self, key, key_id) -> bool:
+        rows = (await self._request('PATCH', '/nathgpt_api_keys', params={'id': f'eq.{key_id}', 'account_key': f'eq.{key}', 'revoked_at': 'is.null'},
+                                    json={'revoked_at': self._iso(time.time())}, headers={'Prefer': 'return=representation'})).json()
+        return bool(rows)
 
     async def claim_conversation(self, key, conversation_id) -> bool:
         return bool(await self._rpc('nathgpt_claim_conversation', {'p_id': conversation_id, 'p_account_key': key}))
